@@ -112,3 +112,8 @@ Run them with `pytest` (from the project folder, venv active).
   bad input (404/400), weakest-first ordering, the subject filter and per-note accuracy.
 - `pytest.approx` compares decimals safely (1/3 can't be stored exactly).
 - `pytest.ini` tells pytest where the tests are and lets them import `app`/`db`.
+
+## 13. Frontend saves every answer
+When you click an option, `saveAttempt()` sends `{note_id, question_index, chosen}` to
+`POST /attempts` as JSON. It runs in the background (`async`), so the quiz doesn't wait for it.
+If saving fails, the quiz still works; the error only shows in the browser console (F12).

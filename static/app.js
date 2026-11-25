@@ -150,6 +150,7 @@ function renderQuiz(mcqs) {
           btn.classList.add("wrong");
         }
         answered++;
+        saveAttempt(i, j);
 
         const exp = document.createElement("p");
         exp.className = "explanation";
@@ -166,6 +167,20 @@ function renderQuiz(mcqs) {
   });
 
   updateScore();
+}
+
+// Send one answered question to the backend. The server works out
+// whether it was correct, so we only send which option was clicked.
+async function saveAttempt(questionIndex, chosen) {
+  try {
+    await fetch("/attempts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ note_id: currentNote.id, question_index: questionIndex, chosen }),
+    });
+  } catch (err) {
+    console.error("Could not save attempt:", err);
+  }
 }
 
 $("retry-btn").addEventListener("click", () => renderQuiz(currentNote.mcqs));
