@@ -58,3 +58,6 @@ Quiz options get `.correct` (green) or `.wrong` (red) classes after you click.
   a wrong pick turns red, the explanation appears and the score updates. "Retry quiz" redraws it.
 - AI text is inserted with `textContent` (not `innerHTML`), so it is always shown as plain text
   and can never run as HTML or script.
+
+## 9. README
+`README.md` explains setup (venv, install, `.env`) and how to run the web app and the CLI.
