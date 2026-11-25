@@ -102,3 +102,13 @@ So a topic only shows up as "very weak" or "very strong" once there is real evid
   We never trust the browser to say "I was right": it could be buggy or edited.
 - `GET /weakness?subject=Math` filters by subject; without `?subject=` you get all subjects.
 - `GET /notes/{id}` now also returns `accuracy` (or `null` if you haven't tried that quiz).
+
+## 12. Tests (`tests/test_attempts.py`)
+Run them with `pytest` (from the project folder, venv active).
+- A *fixture* is setup code pytest runs before a test. `client` points `db.DB_PATH` to a
+  temporary file, so tests never touch your real `notes.db`, and gives a `TestClient`
+  that calls the API without starting a real server.
+- Tests cover the score math (0 attempts → 0.5, 1 right → 1/3, ...), right/wrong answers,
+  bad input (404/400), weakest-first ordering, the subject filter and per-note accuracy.
+- `pytest.approx` compares decimals safely (1/3 can't be stored exactly).
+- `pytest.ini` tells pytest where the tests are and lets them import `app`/`db`.

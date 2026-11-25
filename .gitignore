@@ -4,3 +4,4 @@ __pycache__/
 output/
 *.pdf
 *.db
+.pytest_cache/

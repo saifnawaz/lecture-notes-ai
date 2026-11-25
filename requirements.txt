@@ -3,3 +3,7 @@ python-dotenv
 fastapi
 uvicorn
 python-multipart
+
+# testing
+pytest
+httpx
