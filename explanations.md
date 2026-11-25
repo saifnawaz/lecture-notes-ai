@@ -48,3 +48,13 @@ doesn't hide the API routes.
 Colors are defined once as CSS variables (`--accent`, `--correct`, ...) at the top and reused.
 The page uses a two-column grid (sidebar + main) that becomes one column on small screens.
 Quiz options get `.correct` (green) or `.wrong` (red) classes after you click.
+
+## 8. Frontend logic (`static/app.js`)
+- `fetch()` is how the browser talks to our FastAPI routes (`/generate`, `/notes`, `/notes/{id}`).
+- Upload: the form's `submit` event builds a `FormData` (file + subject), POSTs it,
+  shows "Generating..." and disables the button until the answer arrives.
+- Sidebar: `loadNotesList()` fills the list of saved notes; clicking one opens it.
+- Quiz: each option is a button. On click, the question locks, the right answer turns green,
+  a wrong pick turns red, the explanation appears and the score updates. "Retry quiz" redraws it.
+- AI text is inserted with `textContent` (not `innerHTML`), so it is always shown as plain text
+  and can never run as HTML or script.
