@@ -1,16 +1,19 @@
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
 from google import genai
-from google.genai import types
+from google.genai import errors, types
 
 load_dotenv()
 
 API_KEY = os.getenv("GEMINI_API_KEY")
-MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+FALLBACKS = [m.strip() for m in os.getenv("GEMINI_FALLBACKS", "gemini-3.5-flash,gemini-3.5-flash-lite").split(",") if m.strip()]
+RETRIES = 3
 OUTPUT_DIR = Path("output")
 
 PROMPT = """You are a study assistant for a university student.
@@ -43,17 +46,34 @@ def list_models(client):
             print(m.name)
 
 
-def generate(client, file_path):
-    print(f"Uploading {file_path.name}...")
-    uploaded = client.files.upload(file=file_path)
-
-    print(f"Asking {MODEL}...")
+def ask(client, model, uploaded):
     response = client.models.generate_content(
-        model=MODEL,
+        model=model,
         contents=[uploaded, PROMPT],
         config=types.GenerateContentConfig(response_mime_type="application/json"),
     )
     return json.loads(response.text)
+
+
+def generate(client, file_path):
+    print(f"Uploading {file_path.name}...")
+    uploaded = client.files.upload(file=file_path)
+
+    for model in [MODEL] + FALLBACKS:
+        for attempt in range(1, RETRIES + 1):
+            try:
+                print(f"Asking {model} (try {attempt})...")
+                return ask(client, model, uploaded)
+            except errors.ServerError:
+                print("  Server busy.")
+                time.sleep(attempt * 3)
+            except errors.ClientError as e:
+                print(f"  {model} not usable: {e.code}")
+                break
+            except json.JSONDecodeError:
+                print("  Bad JSON from model, retrying.")
+
+    sys.exit("All models failed. Try again later.")
 
 
 def save(data, file_path):
