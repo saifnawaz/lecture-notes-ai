@@ -156,3 +156,14 @@ select {
 .weak { background: var(--wrong); }
 .medium { background: #f59f00; }
 .strong { background: var(--correct); }
+
+.accuracy {
+  display: inline-block;
+  margin: 0 0 0.75rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  background: #edf2ff;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 0.85rem;
+}

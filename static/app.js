@@ -37,8 +37,18 @@ function showNote(note) {
     list.appendChild(li);
   }
 
+  showAccuracy(note.accuracy);
   renderQuiz(note.mcqs);
   highlightActive(note.id);
+}
+
+// accuracy is {attempts, correct, accuracy} or null if never tried.
+function showAccuracy(acc) {
+  const el = $("note-accuracy");
+  el.hidden = !acc;
+  if (acc) {
+    el.textContent = `Your accuracy on this note: ${acc.accuracy}% (${acc.correct}/${acc.attempts} answers)`;
+  }
 }
 
 // ---------- Saved notes sidebar ----------
@@ -177,12 +187,16 @@ function renderQuiz(mcqs) {
 // Send one answered question to the backend. The server works out
 // whether it was correct, so we only send which option was clicked.
 async function saveAttempt(questionIndex, chosen) {
+  const noteId = currentNote.id;
   try {
     await fetch("/attempts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ note_id: currentNote.id, question_index: questionIndex, chosen }),
+      body: JSON.stringify({ note_id: noteId, question_index: questionIndex, chosen }),
     });
+    // Refresh the accuracy line (only if the user is still on this note).
+    const note = await (await fetch(`/notes/${noteId}`)).json();
+    if (currentNote && currentNote.id === noteId) showAccuracy(note.accuracy);
   } catch (err) {
     console.error("Could not save attempt:", err);
   }

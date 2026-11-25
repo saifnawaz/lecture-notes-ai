@@ -125,3 +125,9 @@ If saving fails, the quiz still works; the error only shows in the browser conso
   Thanks to smoothing, a topic answered right only once is yellow, not green; it turns green after a few right answers.
 - The subject dropdown is filled from your attempts; changing it calls `/weakness?subject=...`.
 - `showView()` is a small helper that shows one section and hides the other two.
+
+## 15. Accuracy on each note page
+`GET /notes/{id}` returns `accuracy`, and the note page shows it as a small badge,
+e.g. "Your accuracy on this note: 60% (3/5 answers)". It's hidden if you never took that quiz.
+After each answer is saved, the page re-fetches the note so the badge updates live.
+It counts every answer, including retries.
