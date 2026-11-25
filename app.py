@@ -5,8 +5,10 @@ Run with:  uvicorn app:app --reload
 import os
 import tempfile
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.staticfiles import StaticFiles
 
 import db
 from study_ai import GenerationError, generate, make_client
@@ -61,3 +63,7 @@ def get_note(note_id: int):
     if note is None:
         raise HTTPException(404, "Note not found.")
     return note
+
+
+# Serve the frontend (static/index.html at "/"). Must come after the API routes.
+app.mount("/", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="static")

@@ -37,3 +37,9 @@ SQLite is a database stored in one file (`notes.db`), built into Python, so ther
 - The route is a plain `def` (not `async def`), so FastAPI runs the slow Gemini call
   in a background thread and the server stays responsive.
 - Try it: run `uvicorn app:app --reload` and open http://127.0.0.1:8000/docs for an auto-generated test page.
+
+## 6. Frontend page (`static/index.html`)
+Plain HTML: a sidebar of saved notes, an upload form, and a notes + quiz section
+(hidden until a note is opened). `app.mount("/", StaticFiles(...))` in `app.py` makes FastAPI
+serve the `static/` folder, so http://127.0.0.1:8000/ shows the page. It's added last so it
+doesn't hide the API routes.

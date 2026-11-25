@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lecture Notes AI</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <h1>Lecture Notes AI</h1>
+    <p>Upload a PDF, get notes and a quiz.</p>
+  </header>
+
+  <div class="layout">
+    <aside>
+      <h2>Saved notes</h2>
+      <button id="new-btn" class="secondary">+ New upload</button>
+      <ul id="notes-list"></ul>
+    </aside>
+
+    <main>
+      <!-- Upload page -->
+      <section id="upload-view" class="card">
+        <h2>Upload a PDF</h2>
+        <form id="upload-form">
+          <label>PDF file
+            <input type="file" id="file" accept=".pdf,application/pdf" required>
+          </label>
+          <label>Subject (optional)
+            <input type="text" id="subject" placeholder="e.g. Discrete Mathematics">
+          </label>
+          <button type="submit" id="submit-btn">Generate notes</button>
+        </form>
+        <p id="status"></p>
+      </section>
+
+      <!-- Notes + quiz view -->
+      <section id="note-view" hidden>
+        <div class="card">
+          <p id="note-subject" class="subject"></p>
+          <h2 id="note-topic"></h2>
+          <p id="note-date" class="muted"></p>
+          <ul id="note-notes" class="notes"></ul>
+        </div>
+
+        <div class="card">
+          <div class="quiz-head">
+            <h2>Quiz</h2>
+            <span id="score"></span>
+          </div>
+          <div id="quiz"></div>
+          <button id="retry-btn" class="secondary" hidden>Retry quiz</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
