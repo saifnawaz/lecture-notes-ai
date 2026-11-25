@@ -26,3 +26,14 @@ SQLite is a database stored in one file (`notes.db`), built into Python, so ther
   because a SQLite column holds plain text, not Python lists.
 - `list_notes()` / `get_note()` read rows back (and turn the JSON text back into lists).
 - The `?` placeholders in SQL keep user data separate from the query (prevents SQL injection).
+
+## 5. FastAPI backend in `app.py`
+- `@app.post("/generate")` is a route: when the browser POSTs a PDF to `/generate`, this function runs.
+  It checks the file is a PDF (max 20 MB), writes a temporary copy (Gemini needs a file on disk),
+  calls `generate()`, deletes the temp file in `finally` (runs even on errors), saves to SQLite and returns the JSON.
+- `GET /notes` lists saved notes, `GET /notes/{id}` returns one (404 if missing).
+- `HTTPException(400, ...)` sends an error message back to the browser instead of crashing.
+- `lifespan` runs `init_db()` once when the server starts.
+- The route is a plain `def` (not `async def`), so FastAPI runs the slow Gemini call
+  in a background thread and the server stays responsive.
+- Try it: run `uvicorn app:app --reload` and open http://127.0.0.1:8000/docs for an auto-generated test page.
