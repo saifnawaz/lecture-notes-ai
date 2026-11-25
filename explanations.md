@@ -43,3 +43,8 @@ Plain HTML: a sidebar of saved notes, an upload form, and a notes + quiz section
 (hidden until a note is opened). `app.mount("/", StaticFiles(...))` in `app.py` makes FastAPI
 serve the `static/` folder, so http://127.0.0.1:8000/ shows the page. It's added last so it
 doesn't hide the API routes.
+
+## 7. Styling (`static/style.css`)
+Colors are defined once as CSS variables (`--accent`, `--correct`, ...) at the top and reused.
+The page uses a two-column grid (sidebar + main) that becomes one column on small screens.
+Quiz options get `.correct` (green) or `.wrong` (red) classes after you click.
