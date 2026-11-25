@@ -13,3 +13,8 @@ one copy of the logic. Two changes:
 - Instead of `sys.exit()` when everything fails, it raises `GenerationError`.
   A web server must not quit on one failed request; it should send an error back.
 - The prompt now also asks for a `subject` (e.g. "Discrete Mathematics"), which we save in the database.
+
+## 3. New packages in `requirements.txt`
+- `fastapi`: the web framework that defines our URLs (routes) like `/generate`.
+- `uvicorn`: the server program that actually runs the FastAPI app.
+- `python-multipart`: lets FastAPI read file uploads from a form.
