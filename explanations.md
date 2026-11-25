@@ -61,3 +61,36 @@ Quiz options get `.correct` (green) or `.wrong` (red) classes after you click.
 
 ## 9. README
 `README.md` explains setup (venv, install, `.env`) and how to run the web app and the CLI.
+
+---
+
+# Phase 2: quiz tracking and weak topics
+
+## 10. `attempts` table and weakness math in `db.py`
+- New table `attempts`: one row each time you answer a quiz question
+  (which note, which question, its subtopic/subject, what you chose, right or wrong).
+  SQLite has no true/false type, so `correct` is stored as 1 or 0.
+- `weakness()` groups attempts by subject + subtopic with SQL `GROUP BY`, counts attempts
+  and wrong answers, then adds accuracy % and a weakness score. Sorted weakest first.
+- `note_accuracy()` gives your accuracy on one note (or `None` if you never tried its quiz).
+- `init_db()` uses `CREATE TABLE IF NOT EXISTS`, so your existing `notes.db` just gets the new table.
+
+### Why the score is `(wrong + 1) / (attempts + 2)`
+The simple error rate is `wrong / attempts`. With very few answers it gives extreme results:
+- 1 question, got it right → 0% wrong → "you've mastered this topic". Too confident!
+- 1 question, got it wrong → 100% wrong → "this is your worst topic ever". Also too harsh.
+
+Adding +1 to wrong and +2 to attempts is like pretending you already answered
+**two extra questions: one right and one wrong**. So every topic starts at 50% ("we don't know yet"):
+
+| Answers           | Plain error rate | Smoothed score       |
+|-------------------|------------------|----------------------|
+| 1 right           | 0%               | (0+1)/(1+2) = 33%    |
+| 1 wrong           | 100%             | (1+1)/(1+2) = 67%    |
+| 10 right          | 0%               | (0+1)/(10+2) = 8%    |
+| 10 wrong          | 100%             | (10+1)/(10+2) = 92%  |
+
+With few answers the score stays near the middle. With many answers the two
+pretend answers hardly matter and the score gets close to your real error rate.
+So a topic only shows up as "very weak" or "very strong" once there is real evidence.
+(This trick is called *Laplace smoothing*.)
