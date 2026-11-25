@@ -1,79 +1,10 @@
 import json
-import os
 import sys
-import time
 from pathlib import Path
 
-from dotenv import load_dotenv
-from google import genai
-from google.genai import errors, types
+from study_ai import GenerationError, generate, list_models, make_client
 
-load_dotenv()
-
-API_KEY = os.getenv("GEMINI_API_KEY")
-MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
-FALLBACKS = [m.strip() for m in os.getenv("GEMINI_FALLBACKS", "gemini-3.5-flash,gemini-3.5-flash-lite").split(",") if m.strip()]
-RETRIES = 3
 OUTPUT_DIR = Path("output")
-
-PROMPT = """You are a study assistant for a university student.
-Read the attached study material and return ONLY valid JSON in this exact shape:
-
-{
-  "topic": "short title of the material",
-  "notes": ["clear bullet point", "..."],
-  "mcqs": [
-    {
-      "question": "question text",
-      "options": ["A option", "B option", "C option", "D option"],
-      "answer": 0,
-      "subtopic": "which subtopic this tests",
-      "explanation": "one line on why the answer is correct"
-    }
-  ]
-}
-
-Rules:
-- 8 to 12 notes, simple English, keep formulas.
-- Exactly 5 MCQs. "answer" is the index (0-3) of the correct option.
-- Questions must test understanding, not just copying lines.
-"""
-
-
-def list_models(client):
-    for m in client.models.list():
-        if "generateContent" in (m.supported_actions or []):
-            print(m.name)
-
-
-def ask(client, model, uploaded):
-    response = client.models.generate_content(
-        model=model,
-        contents=[uploaded, PROMPT],
-        config=types.GenerateContentConfig(response_mime_type="application/json"),
-    )
-    return json.loads(response.text)
-
-
-def generate(client, file_path):
-    print(f"Uploading {file_path.name}...")
-    uploaded = client.files.upload(file=file_path)
-
-    for model in [MODEL] + FALLBACKS:
-        for attempt in range(1, RETRIES + 1):
-            try:
-                print(f"Asking {model} (try {attempt})...")
-                return ask(client, model, uploaded)
-            except errors.ServerError:
-                print("  Server busy.")
-                time.sleep(attempt * 3)
-            except errors.ClientError as e:
-                print(f"  {model} not usable: {e.code}")
-                break
-            except json.JSONDecodeError:
-                print("  Bad JSON from model, retrying.")
-
-    sys.exit("All models failed. Try again later.")
 
 
 def save(data, file_path):
@@ -111,23 +42,25 @@ def quiz(data):
 
 
 def main():
-    if not API_KEY:
-        sys.exit("GEMINI_API_KEY missing. Put it in a .env file.")
-
     if len(sys.argv) < 2:
         sys.exit("Usage: python main.py <file.pdf|image>   or   python main.py --models")
 
-    client = genai.Client(api_key=API_KEY)
+    try:
+        client = make_client()
 
-    if sys.argv[1] == "--models":
-        list_models(client)
-        return
+        if sys.argv[1] == "--models":
+            for name in list_models(client):
+                print(name)
+            return
 
-    file_path = Path(sys.argv[1])
-    if not file_path.exists():
-        sys.exit(f"File not found: {file_path}")
+        file_path = Path(sys.argv[1])
+        if not file_path.exists():
+            sys.exit(f"File not found: {file_path}")
 
-    data = generate(client, file_path)
+        data = generate(client, file_path)
+    except GenerationError as e:
+        sys.exit(str(e))
+
     save(data, file_path)
     show_notes(data)
     quiz(data)
