@@ -131,3 +131,6 @@ If saving fails, the quiz still works; the error only shows in the browser conso
 e.g. "Your accuracy on this note: 60% (3/5 answers)". It's hidden if you never took that quiz.
 After each answer is saved, the page re-fetches the note so the badge updates live.
 It counts every answer, including retries.
+
+## 16. README
+Added the new routes, a "Weak topics" section and how to run the tests (`pytest`).

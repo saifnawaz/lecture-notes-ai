@@ -33,7 +33,21 @@ API docs are at http://127.0.0.1:8000/docs.
 |--------|---------------|---------------------------------------|
 | POST   | `/generate`   | Upload a PDF (`file`, optional `subject`) and get notes + MCQs |
 | GET    | `/notes`      | List saved notes                      |
-| GET    | `/notes/{id}` | Get one saved note                    |
+| GET    | `/notes/{id}` | Get one saved note (with your accuracy) |
+| POST   | `/attempts`   | Save one quiz answer (`note_id`, `question_index`, `chosen`) |
+| GET    | `/weakness`   | Subtopics sorted weakest first (optional `?subject=`) |
+
+## Weak topics
+
+Every quiz answer is saved. The **Weak topics** page ranks subtopics by a smoothed
+error rate, `(wrong + 1) / (attempts + 2)`, so one lucky or unlucky answer doesn't
+make a topic look perfect or hopeless. See `explanations.md` for details.
+
+## Run the tests
+
+```
+pytest
+```
 
 ## Run from the command line
 
@@ -49,3 +63,4 @@ python main.py --models
 - `db.py`: SQLite storage
 - `static/`: frontend (HTML, CSS, JS)
 - `main.py`: command-line version
+- `tests/`: pytest tests
