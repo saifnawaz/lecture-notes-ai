@@ -131,13 +131,6 @@ def weakness(subject=None):
     return rows
 
 
-def subjects_with_attempts():
-    with connect() as conn:
-        rows = conn.execute(
-            "SELECT DISTINCT subject FROM attempts ORDER BY subject"
-        ).fetchall()
-    return [r["subject"] for r in rows]
-
 
 def note_accuracy(note_id):
     """Accuracy on one note, or None if it has no attempts yet."""

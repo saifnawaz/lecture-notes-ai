@@ -9,6 +9,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 import db
 from study_ai import GenerationError, generate, make_client
@@ -62,7 +63,42 @@ def get_note(note_id: int):
     note = db.get_note(note_id)
     if note is None:
         raise HTTPException(404, "Note not found.")
+    note["accuracy"] = db.note_accuracy(note_id)  # None if quiz never tried
     return note
+
+
+class Attempt(BaseModel):
+    """What the browser sends after answering one question."""
+    note_id: int
+    question_index: int
+    chosen: int
+
+
+@app.post("/attempts")
+def record_attempt(attempt: Attempt):
+    note = db.get_note(attempt.note_id)
+    if note is None:
+        raise HTTPException(404, "Note not found.")
+    if not 0 <= attempt.question_index < len(note["mcqs"]):
+        raise HTTPException(400, "Invalid question_index.")
+    question = note["mcqs"][attempt.question_index]
+    if not 0 <= attempt.chosen < len(question["options"]):
+        raise HTTPException(400, "Invalid chosen option.")
+
+    # The server decides subtopic, subject and correctness from the saved note,
+    # so the browser can't send wrong values.
+    correct = attempt.chosen == question["answer"]
+    subtopic = question.get("subtopic") or note["topic"]
+    attempt_id = db.save_attempt(
+        attempt.note_id, attempt.question_index, subtopic,
+        note["subject"], attempt.chosen, correct,
+    )
+    return {"id": attempt_id, "correct": correct, "subtopic": subtopic, "subject": note["subject"]}
+
+
+@app.get("/weakness")
+def get_weakness(subject: str | None = None):
+    return db.weakness(subject)
 
 
 # Serve the frontend (static/index.html at "/"). Must come after the API routes.

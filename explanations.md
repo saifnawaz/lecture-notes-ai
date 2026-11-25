@@ -94,3 +94,11 @@ With few answers the score stays near the middle. With many answers the two
 pretend answers hardly matter and the score gets close to your real error rate.
 So a topic only shows up as "very weak" or "very strong" once there is real evidence.
 (This trick is called *Laplace smoothing*.)
+
+## 11. API routes: `POST /attempts`, `GET /weakness`
+- `Attempt` is a Pydantic model: it describes the JSON the browser must send
+  (`note_id`, `question_index`, `chosen`). FastAPI checks the types automatically and returns 422 if they're wrong.
+- The server looks up the saved note to fill in subtopic, subject and whether the answer was correct.
+  We never trust the browser to say "I was right": it could be buggy or edited.
+- `GET /weakness?subject=Math` filters by subject; without `?subject=` you get all subjects.
+- `GET /notes/{id}` now also returns `accuracy` (or `null` if you haven't tried that quiz).
