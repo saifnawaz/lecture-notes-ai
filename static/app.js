@@ -8,17 +8,22 @@ let currentNote = null;
 
 // ---------- Views ----------
 
+// Show one section (upload / note / weak) and hide the others.
+function showView(name) {
+  for (const view of ["upload", "note", "weak"]) {
+    $(`${view}-view`).hidden = view !== name;
+  }
+}
+
 function showUpload() {
   currentNote = null;
-  $("upload-view").hidden = false;
-  $("note-view").hidden = true;
+  showView("upload");
   highlightActive(null);
 }
 
 function showNote(note) {
   currentNote = note;
-  $("upload-view").hidden = true;
-  $("note-view").hidden = false;
+  showView("note");
 
   $("note-subject").textContent = note.subject || "";
   $("note-topic").textContent = note.topic || "Untitled";
@@ -182,6 +187,87 @@ async function saveAttempt(questionIndex, chosen) {
     console.error("Could not save attempt:", err);
   }
 }
+
+// ---------- Weak topics ----------
+
+// Same thresholds as the explanation: score is the smoothed error rate (0..1).
+function level(score) {
+  if (score > 0.5) return "weak";
+  if (score >= 0.3) return "medium";
+  return "strong";
+}
+
+async function showWeak() {
+  currentNote = null;
+  showView("weak");
+  highlightActive(null);
+  await fillSubjectFilter();
+  await loadWeakness();
+}
+
+// Rebuild the dropdown from all subjects that have attempts, keeping the selection.
+async function fillSubjectFilter() {
+  const select = $("subject-filter");
+  const selected = select.value;
+  const rows = await (await fetch("/weakness")).json();
+  const subjects = [...new Set(rows.map((r) => r.subject))].sort();
+
+  select.innerHTML = "";
+  for (const value of ["", ...subjects]) {
+    const opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = value || "All subjects";
+    select.appendChild(opt);
+  }
+  select.value = subjects.includes(selected) ? selected : "";
+}
+
+async function loadWeakness() {
+  const subject = $("subject-filter").value;
+  const url = subject ? `/weakness?subject=${encodeURIComponent(subject)}` : "/weakness";
+  const rows = await (await fetch(url)).json();
+
+  const list = $("weak-list");
+  list.innerHTML = "";
+  if (rows.length === 0) {
+    const p = document.createElement("p");
+    p.className = "muted";
+    p.textContent = "No quiz answers yet. Take a quiz to see your weak topics.";
+    list.appendChild(p);
+    return;
+  }
+
+  for (const r of rows) {
+    const row = document.createElement("div");
+    row.className = "weak-row";
+
+    const name = document.createElement("div");
+    name.className = "weak-name";
+    name.textContent = r.subtopic || "General";
+    const sub = document.createElement("small");
+    sub.textContent = r.subject || "";
+    name.appendChild(sub);
+
+    const track = document.createElement("div");
+    track.className = "bar-track";
+    const bar = document.createElement("div");
+    bar.className = `bar ${level(r.score)}`;
+    bar.style.width = `${Math.max(r.accuracy, 2)}%`; // keep a sliver visible at 0%
+    track.appendChild(bar);
+
+    const stats = document.createElement("div");
+    stats.className = "weak-stats";
+    const pct = document.createElement("b");
+    pct.textContent = `${r.accuracy}%`;
+    stats.append(pct, ` · ${r.attempts} attempt${r.attempts === 1 ? "" : "s"}`);
+
+    row.append(name, track, stats);
+    list.appendChild(row);
+  }
+}
+
+$("subject-filter").addEventListener("change", loadWeakness);
+$("weak-btn").addEventListener("click", showWeak);
 
 $("retry-btn").addEventListener("click", () => renderQuiz(currentNote.mcqs));
 $("new-btn").addEventListener("click", showUpload);

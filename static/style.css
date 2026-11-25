@@ -122,3 +122,37 @@ button.secondary { background: #e9ecf3; color: var(--text); }
 @media (max-width: 760px) {
   .layout { grid-template-columns: 1fr; padding: 1rem; }
 }
+
+/* Navigation */
+.nav-buttons { display: flex; flex-direction: column; gap: 0.4rem; }
+
+/* Weak topics */
+label.inline { flex-direction: row; align-items: center; gap: 0.5rem; }
+select {
+  padding: 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+}
+.legend { margin-top: 0; display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-left: 0.5rem; }
+
+.weak-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1.2fr) 2fr minmax(110px, auto);
+  gap: 1rem;
+  align-items: center;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.weak-row:last-child { border-bottom: none; }
+.weak-name { font-weight: 600; }
+.weak-name small { display: block; color: var(--muted); font-weight: 400; }
+.bar-track { height: 12px; background: #eef0f4; border-radius: 6px; overflow: hidden; }
+.bar { height: 100%; border-radius: 6px; }
+.weak-stats { font-size: 0.85rem; color: var(--muted); text-align: right; }
+.weak-stats b { color: var(--text); }
+
+.weak { background: var(--wrong); }
+.medium { background: #f59f00; }
+.strong { background: var(--correct); }

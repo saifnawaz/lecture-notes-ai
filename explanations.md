@@ -117,3 +117,11 @@ Run them with `pytest` (from the project folder, venv active).
 When you click an option, `saveAttempt()` sends `{note_id, question_index, chosen}` to
 `POST /attempts` as JSON. It runs in the background (`async`), so the quiz doesn't wait for it.
 If saving fails, the quiz still works; the error only shows in the browser console (F12).
+
+## 14. "Weak topics" page
+- New sidebar button opens a section listing every subtopic, weakest first (the server already sorts).
+- Each row: subtopic name + subject, a bar whose width is your accuracy %, and "accuracy · attempts".
+- Bar color comes from the weakness score: red if > 0.5, yellow if 0.3–0.5, green if < 0.3.
+  Thanks to smoothing, a topic answered right only once is yellow, not green; it turns green after a few right answers.
+- The subject dropdown is filled from your attempts; changing it calls `/weakness?subject=...`.
+- `showView()` is a small helper that shows one section and hides the other two.

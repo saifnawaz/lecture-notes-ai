@@ -15,7 +15,10 @@
   <div class="layout">
     <aside>
       <h2>Saved notes</h2>
-      <button id="new-btn" class="secondary">+ New upload</button>
+      <div class="nav-buttons">
+        <button id="new-btn" class="secondary">+ New upload</button>
+        <button id="weak-btn" class="secondary">Weak topics</button>
+      </div>
       <ul id="notes-list"></ul>
     </aside>
 
@@ -52,6 +55,25 @@
           <div id="quiz"></div>
           <button id="retry-btn" class="secondary" hidden>Retry quiz</button>
         </div>
+      </section>
+
+      <!-- Weak topics -->
+      <section id="weak-view" class="card" hidden>
+        <div class="quiz-head">
+          <h2>Weak topics</h2>
+          <label class="inline">Subject
+            <select id="subject-filter">
+              <option value="">All subjects</option>
+            </select>
+          </label>
+        </div>
+        <p class="muted legend">
+          Weakest first. Bar = your accuracy.
+          <span class="dot weak"></span> weak
+          <span class="dot medium"></span> so-so
+          <span class="dot strong"></span> strong
+        </p>
+        <div id="weak-list"></div>
       </section>
     </main>
   </div>
