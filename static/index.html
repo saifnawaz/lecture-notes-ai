@@ -17,7 +17,7 @@
       <h2>Saved notes</h2>
       <div class="nav-buttons">
         <button id="new-btn" class="secondary">+ New upload</button>
-        <button id="weak-btn" class="secondary">Progress</button>
+        <button id="progress-btn" class="secondary">Progress</button>
         <button id="review-btn" class="secondary">Daily Revision <span id="due-badge" class="badge" hidden></span></button>
       </div>
       <ul id="notes-list"></ul>
@@ -70,22 +70,14 @@
       </section>
 
       <!-- Progress -->
-      <section id="weak-view" class="card" hidden>
+      <section id="progress-view" class="card" hidden>
         <div class="quiz-head">
           <h2>Progress</h2>
-          <label class="inline">Subject
-            <select id="subject-filter">
-              <option value="">All subjects</option>
-            </select>
-          </label>
+          <select id="subject-filter" aria-label="Subject">
+            <option value="">All subjects</option>
+          </select>
         </div>
-        <p class="muted legend">
-          Weakest first. Bar = your accuracy.
-          <span class="dot weak"></span> weak
-          <span class="dot medium"></span> so-so
-          <span class="dot strong"></span> strong
-        </p>
-        <div id="weak-list"></div>
+        <div id="progress-list"></div>
       </section>
 
       <!-- Daily Revision (flashcards) -->

@@ -25,9 +25,9 @@ async function readJson(res) {
 
 // ---------- Views ----------
 
-// Show one section (upload / note / weak / review) and hide the others.
+// Show one section (upload / note / progress / review) and hide the others.
 function showView(name) {
-  for (const view of ["upload", "note", "weak", "review"]) {
+  for (const view of ["upload", "note", "progress", "review"]) {
     $(`${view}-view`).hidden = view !== name;
   }
 }
@@ -289,26 +289,26 @@ async function saveAttempt(questionIndex, chosen) {
 
 // ---------- Progress page ----------
 
-// Same thresholds as the explanation: score is the smoothed error rate (0..1).
-function level(score) {
-  if (score > 0.5) return "weak";
-  if (score >= 0.3) return "medium";
-  return "strong";
+// Bar color depends only on how full it is.
+function barColor(pct) {
+  if (pct < 25) return "low";
+  if (pct > 75) return "high";
+  return "mid";
 }
 
-async function showWeak() {
+async function showProgress() {
   currentNote = null;
-  showView("weak");
+  showView("progress");
   highlightActive(null);
   await fillSubjectFilter();
-  await loadWeakness();
+  await loadProgress();
 }
 
 // Rebuild the dropdown from all subjects that have attempts, keeping the selection.
 async function fillSubjectFilter() {
   const select = $("subject-filter");
   const selected = select.value;
-  const rows = await (await fetch("/weakness")).json();
+  const rows = await (await fetch("/progress")).json();
   const subjects = [...new Set(rows.map((r) => r.subject))].sort();
 
   select.innerHTML = "";
@@ -321,12 +321,12 @@ async function fillSubjectFilter() {
   select.value = subjects.includes(selected) ? selected : "";
 }
 
-async function loadWeakness() {
+async function loadProgress() {
   const subject = $("subject-filter").value;
-  const url = subject ? `/weakness?subject=${encodeURIComponent(subject)}` : "/weakness";
-  const rows = await (await fetch(url)).json();
+  const url = subject ? `/progress?subject=${encodeURIComponent(subject)}` : "/progress";
+  const rows = await (await fetch(url)).json(); // already sorted, lowest mastery first
 
-  const list = $("weak-list");
+  const list = $("progress-list");
   list.innerHTML = "";
   if (rows.length === 0) {
     const p = document.createElement("p");
@@ -337,11 +337,13 @@ async function loadWeakness() {
   }
 
   for (const r of rows) {
+    const pct = Math.round(r.mastery * 100);
+
     const row = document.createElement("div");
-    row.className = "weak-row";
+    row.className = "progress-row";
 
     const name = document.createElement("div");
-    name.className = "weak-name";
+    name.className = "progress-name";
     name.textContent = r.subtopic || "General";
     const sub = document.createElement("small");
     sub.textContent = r.subject || "";
@@ -350,23 +352,25 @@ async function loadWeakness() {
     const track = document.createElement("div");
     track.className = "bar-track";
     const bar = document.createElement("div");
-    bar.className = `bar ${level(r.score)}`;
-    bar.style.width = `${Math.max(r.accuracy, 2)}%`; // keep a sliver visible at 0%
+    bar.className = `bar ${barColor(pct)}`;
+    bar.style.width = `${pct}%`;
     track.appendChild(bar);
 
     const stats = document.createElement("div");
-    stats.className = "weak-stats";
-    const pct = document.createElement("b");
-    pct.textContent = `${r.accuracy}%`;
-    stats.append(pct, ` · ${r.attempts} attempt${r.attempts === 1 ? "" : "s"}`);
+    stats.className = "progress-stats";
+    const big = document.createElement("b");
+    big.textContent = `${pct}%`;
+    const small = document.createElement("small");
+    small.textContent = `${r.correct} of ${r.attempts} correct`;
+    stats.append(big, small);
 
     row.append(name, track, stats);
     list.appendChild(row);
   }
 }
 
-$("subject-filter").addEventListener("change", loadWeakness);
-$("weak-btn").addEventListener("click", showWeak);
+$("subject-filter").addEventListener("change", loadProgress);
+$("progress-btn").addEventListener("click", showProgress);
 
 // ---------- Daily Revision (flashcards) ----------
 

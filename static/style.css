@@ -126,36 +126,40 @@ button.secondary { background: #e9ecf3; color: var(--text); }
 /* Navigation */
 .nav-buttons { display: flex; flex-direction: column; gap: 0.4rem; }
 
-/* Weak topics */
+/* Subject filters */
 label.inline { flex-direction: row; align-items: center; gap: 0.5rem; }
 select {
   padding: 0.4rem;
   border: 1px solid var(--border);
   border-radius: 8px;
   font: inherit;
+  background: var(--card);
 }
-.legend { margin-top: 0; display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
-.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-left: 0.5rem; }
 
-.weak-row {
+/* Progress page */
+#progress-list { margin-top: 1rem; }
+.progress-row {
   display: grid;
-  grid-template-columns: minmax(140px, 1.2fr) 2fr minmax(110px, auto);
-  gap: 1rem;
+  grid-template-columns: minmax(140px, 1.2fr) 2fr 110px;
+  gap: 1.5rem;
   align-items: center;
-  padding: 0.6rem 0;
-  border-bottom: 1px solid var(--border);
+  padding: 0.9rem 0;
 }
-.weak-row:last-child { border-bottom: none; }
-.weak-name { font-weight: 600; }
-.weak-name small { display: block; color: var(--muted); font-weight: 400; }
-.bar-track { height: 12px; background: #eef0f4; border-radius: 6px; overflow: hidden; }
-.bar { height: 100%; border-radius: 6px; }
-.weak-stats { font-size: 0.85rem; color: var(--muted); text-align: right; }
-.weak-stats b { color: var(--text); }
+.progress-name { font-weight: 600; }
+.progress-name small,
+.progress-stats small { display: block; color: var(--muted); font-weight: 400; font-size: 0.8rem; }
+.bar-track { height: 10px; background: #eef0f4; border-radius: 5px; overflow: hidden; }
+.bar { height: 100%; border-radius: 5px; }
+.bar.low { background: var(--wrong); }
+.bar.mid { background: #f59f00; }
+.bar.high { background: var(--correct); }
+.progress-stats { text-align: right; }
+.progress-stats b { font-size: 1.05rem; }
 
-.weak { background: var(--wrong); }
-.medium { background: #f59f00; }
-.strong { background: var(--correct); }
+@media (max-width: 760px) {
+  .progress-row { grid-template-columns: 1fr 90px; gap: 0.5rem 1rem; }
+  .progress-row .bar-track { grid-column: 1 / -1; grid-row: 2; }
+}
 
 .accuracy {
   display: inline-block;
