@@ -448,3 +448,15 @@ That was confusing. Now the two numbers have separate jobs:
 - `GET /progress` and the weakest topics in `GET /subjects/{id}` return `accuracy` instead of `mastery`.
   The smoothed value isn't sent to the page at all, so it can't show up by accident.
 - Home cards, session reports and the note page already showed raw accuracy, so they didn't change.
+
+## 38. Empty uploads and clearer Gemini errors
+An upload was once saved as `e3b0c442...b855.pdf`. That is the SHA-256 of zero bytes, so the server got an empty file.
+- `POST /generate` reads the upload **once** into `content`. The same bytes are hashed (duplicate check),
+  saved to `uploads/` and sent to Gemini (`generate(client, path, content)` uploads them from memory).
+- A 0-byte upload is rejected with **400 "The uploaded file is empty"** before anything is saved or sent.
+- After saving, the file size on disk is checked against the upload size. If they differ, the file is removed
+  and the request fails with a 500 instead of continuing with a broken PDF.
+- `study_ai.py` now prints the real Gemini error (code, status and message), not just the code.
+- A 404 can mean "model not found" **or** "file not found". If the message is about the file
+  (file, document, mime, pdf, page), trying the next model won't help, so it stops with a clear error.
+  Model errors still move on to the next fallback model.
