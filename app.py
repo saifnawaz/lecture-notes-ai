@@ -2,6 +2,7 @@
 
 Run with:  uvicorn app:app --reload
 """
+import logging
 import os
 import tempfile
 from contextlib import asynccontextmanager
@@ -16,6 +17,8 @@ import srs
 from study_ai import GenerationError, generate, generate_flashcards, make_client, shuffle_options
 
 MAX_UPLOAD_MB = 20
+GENERIC_ERROR = "Something went wrong while talking to the AI. Please try again."
+log = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -44,13 +47,17 @@ def generate_notes(file: UploadFile = File(...), subject: str = Form("")):
         data = generate(make_client(), tmp.name)
     except GenerationError as e:
         raise HTTPException(502, str(e))
+    except Exception:
+        # Anything unexpected (network, Gemini SDK, ...) still gets a readable message.
+        log.exception("generate failed")
+        raise HTTPException(502, GENERIC_ERROR)
     finally:
         os.unlink(tmp.name)  # always delete the temp file
 
     if subject.strip():
         data["subject"] = subject.strip()  # user's choice wins over Gemini's guess
 
-    data["mcqs"] = shuffle_options(data.get("mcqs", []))
+    data["mcqs"] = shuffle_options(data["mcqs"])
     note_id = db.save_note(data)
     return db.get_note(note_id)
 
@@ -82,6 +89,9 @@ def make_flashcards(note_id: int):
         cards = generate_flashcards(make_client(), note["subject"], note["topic"], note["notes"])
     except GenerationError as e:
         raise HTTPException(502, str(e))
+    except Exception:
+        log.exception("generate_flashcards failed")
+        raise HTTPException(502, GENERIC_ERROR)
     db.save_cards(note_id, note["subject"], cards)
     return {"card_count": db.count_cards(note_id)}
 
