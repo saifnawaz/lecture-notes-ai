@@ -167,3 +167,65 @@ select {
   font-weight: 600;
   font-size: 0.85rem;
 }
+
+/* Due count badge in the nav */
+.badge {
+  display: inline-block;
+  min-width: 1.4rem;
+  padding: 0 0.4rem;
+  margin-left: 0.3rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: white;
+  font-size: 0.75rem;
+  line-height: 1.4rem;
+  text-align: center;
+}
+
+/* Flashcards line on the note page */
+.flashcards-line { display: flex; align-items: center; gap: 0.75rem; margin-top: 1rem; }
+.flashcards-line .muted { margin: 0; }
+
+/* Review page */
+.flashcard {
+  min-height: 200px;
+  padding: 1.5rem;
+  margin: 1rem 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fafbfc;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+  transition: border-color 0.15s;
+}
+.flashcard:hover { border-color: var(--accent); }
+.flashcard.flipped { cursor: default; border-color: var(--border); }
+.fc-front { font-size: 1.25rem; font-weight: 600; margin: 0.5rem 0; }
+.fc-back {
+  margin: 0.75rem 0 0;
+  padding-top: 0.75rem;
+  border-top: 1px dashed var(--border);
+  font-size: 1.05rem;
+}
+.flashcard .muted { margin: 0.5rem 0 0; }
+
+.review-buttons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; }
+.review-buttons small { opacity: 0.7; font-weight: 400; margin-left: 0.2rem; }
+.review-buttons .again { background: var(--wrong); }
+.review-buttons .hard { background: #f59f00; }
+.review-buttons .good { background: var(--correct); }
+.review-buttons .easy { background: var(--accent); }
+
+.feedback {
+  margin: 0;
+  padding: 0.4rem 0.75rem;
+  border-radius: 8px;
+  background: #edf2ff;
+  color: var(--accent);
+  font-size: 0.9rem;
+}
+.feedback.error { background: var(--wrong-bg); color: var(--wrong); }
+.done { font-weight: 600; color: var(--correct); }
