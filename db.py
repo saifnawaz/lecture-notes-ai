@@ -63,14 +63,55 @@ def now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def subjects():
+    """All subject names used by notes, sorted, without case duplicates."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT subject FROM notes WHERE subject != '' GROUP BY subject COLLATE NOCASE ORDER BY subject COLLATE NOCASE"
+        ).fetchall()
+    return [r["subject"] for r in rows]
+
+
+def canonical_subject(subject):
+    """Reuse an existing spelling if one matches case-insensitively.
+
+    "discrete mathematics" becomes "Discrete Mathematics" if that already exists.
+    """
+    subject = (subject or "").strip()
+    for existing in subjects():
+        if existing.casefold() == subject.casefold():
+            return existing
+    return subject
+
+
+def rename_subject(old, new):
+    """Rename a subject everywhere (notes, attempts, cards), matching old case-insensitively.
+
+    Use it to merge two subjects: rename_subject("discrete", "Discrete Mathematics").
+    Returns how many rows changed in each table.
+    """
+    old, new = old.strip(), new.strip()
+    if new.casefold() != old.casefold():  # a pure case fix keeps the new spelling
+        new = canonical_subject(new)
+    changed = {}
+    with connect() as conn:
+        for table in ("notes", "attempts", "cards"):
+            cur = conn.execute(
+                f"UPDATE {table} SET subject = ? WHERE subject = ? COLLATE NOCASE", (new, old)
+            )
+            changed[table] = cur.rowcount
+    return changed
+
+
 def save_note(data):
     """Save one generated result (and its flashcards, if any). Returns the new row id."""
     created_at = now()
+    subject = canonical_subject(data.get("subject", ""))
     with connect() as conn:
         cur = conn.execute(
             "INSERT INTO notes (subject, topic, notes, mcqs, created_at) VALUES (?, ?, ?, ?, ?)",
             (
-                data.get("subject", ""),
+                subject,
                 data.get("topic", ""),
                 json.dumps(data.get("notes", []), ensure_ascii=False),
                 json.dumps(data.get("mcqs", []), ensure_ascii=False),
@@ -78,7 +119,7 @@ def save_note(data):
             ),
         )
         note_id = cur.lastrowid
-        insert_cards(conn, note_id, data.get("subject", ""), data.get("flashcards", []))
+        insert_cards(conn, note_id, subject, data.get("flashcards", []))
         return note_id
 
 
@@ -134,9 +175,9 @@ def weakness(subject=None):
     """
     params = ()
     if subject:
-        sql += " WHERE subject = ?"
+        sql += " WHERE subject = ? COLLATE NOCASE"
         params = (subject,)
-    sql += " GROUP BY subject, subtopic"
+    sql += " GROUP BY subject COLLATE NOCASE, subtopic COLLATE NOCASE"
 
     with connect() as conn:
         rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
@@ -207,7 +248,7 @@ def due_cards(subject=None, on=None):
     sql = "SELECT * FROM cards WHERE due_date <= ?"
     params = [on or today()]
     if subject:
-        sql += " AND subject = ?"
+        sql += " AND subject = ? COLLATE NOCASE"
         params.append(subject)
     sql += " ORDER BY due_date, id"
     with connect() as conn:
