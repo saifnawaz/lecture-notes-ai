@@ -4,6 +4,7 @@ import sqlite3
 from datetime import date, datetime, timezone
 
 DB_PATH = "notes.db"
+UNCATEGORIZED = "Uncategorized"
 
 
 def connect():
@@ -57,19 +58,98 @@ def init_db():
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS subjects (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE COLLATE NOCASE,  -- "math" and "Math" count as the same name
+                created_at TEXT
+            )
+            """
+        )
+        migrate(conn)
+
+
+def migrate(conn):
+    """Bring an older notes.db up to date. Safe to run every time."""
+    # New note columns for saved PDFs (ALTER TABLE has no "IF NOT EXISTS").
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(notes)")}
+    for column in ("filename", "pdf_path", "pdf_hash"):
+        if column not in columns:
+            conn.execute(f"ALTER TABLE notes ADD COLUMN {column} TEXT")
+
+    # Every note belongs to a subject now.
+    for table in ("notes", "attempts", "cards"):
+        conn.execute(
+            f"UPDATE {table} SET subject = ? WHERE subject IS NULL OR TRIM(subject) = ''",
+            (UNCATEGORIZED,),
+        )
+
+    # Register subjects that so far only existed as text on notes.
+    conn.execute(
+        """INSERT OR IGNORE INTO subjects (name, created_at)
+           SELECT subject, MIN(created_at) FROM notes GROUP BY subject COLLATE NOCASE"""
+    )
+    # Use the registered spelling everywhere ("math" -> "Math"). "name = x" ignores case
+    # because the name column is COLLATE NOCASE.
+    for table in ("notes", "attempts", "cards"):
+        conn.execute(
+            f"""UPDATE {table} SET subject = (SELECT name FROM subjects WHERE name = {table}.subject)
+                WHERE EXISTS (SELECT 1 FROM subjects WHERE name = {table}.subject)"""
+        )
 
 
 def now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def subjects():
-    """All subject names used by notes, sorted, without case duplicates."""
+# ---------- Subjects ----------
+
+def subject_names():
+    """All subject names, sorted."""
     with connect() as conn:
-        rows = conn.execute(
-            "SELECT subject FROM notes WHERE subject != '' GROUP BY subject COLLATE NOCASE ORDER BY subject COLLATE NOCASE"
-        ).fetchall()
-    return [r["subject"] for r in rows]
+        rows = conn.execute("SELECT name FROM subjects ORDER BY name COLLATE NOCASE").fetchall()
+    return [r["name"] for r in rows]
+
+
+def ensure_subject(conn, name):
+    """Create the subject if it doesn't exist yet. Returns its id."""
+    conn.execute("INSERT OR IGNORE INTO subjects (name, created_at) VALUES (?, ?)", (name, now()))
+    return conn.execute("SELECT id FROM subjects WHERE name = ?", (name,)).fetchone()["id"]
+
+
+def create_subject(name):
+    """Create a subject (or find the existing one with that name). Returns its id."""
+    name = canonical_subject(name)
+    with connect() as conn:
+        return ensure_subject(conn, name)
+
+
+def subject_summaries(subject_id=None):
+    """Per subject: number of PDFs, cards due today, quiz attempts/correct and accuracy %."""
+    sql = """
+        SELECT s.id, s.name,
+               (SELECT COUNT(*) FROM notes n WHERE n.subject = s.name COLLATE NOCASE) AS pdf_count,
+               (SELECT COUNT(*) FROM cards c WHERE c.subject = s.name COLLATE NOCASE AND c.due_date <= ?) AS due_today,
+               (SELECT COUNT(*) FROM attempts a WHERE a.subject = s.name COLLATE NOCASE) AS attempts,
+               (SELECT COALESCE(SUM(correct), 0) FROM attempts a WHERE a.subject = s.name COLLATE NOCASE) AS correct
+        FROM subjects s
+    """
+    params = [today()]
+    if subject_id is not None:
+        sql += " WHERE s.id = ?"
+        params.append(subject_id)
+    sql += " ORDER BY s.name COLLATE NOCASE"
+    with connect() as conn:
+        rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+    for r in rows:
+        r["accuracy"] = round(100 * r["correct"] / r["attempts"]) if r["attempts"] else None
+    return rows
+
+
+def get_subject(subject_id):
+    rows = subject_summaries(subject_id)
+    return rows[0] if rows else None
 
 
 def canonical_subject(subject):
@@ -78,7 +158,7 @@ def canonical_subject(subject):
     "discrete mathematics" becomes "Discrete Mathematics" if that already exists.
     """
     subject = (subject or "").strip()
-    for existing in subjects():
+    for existing in subject_names():
         if existing.casefold() == subject.casefold():
             return existing
     return subject
@@ -100,22 +180,34 @@ def rename_subject(old, new):
                 f"UPDATE {table} SET subject = ? WHERE subject = ? COLLATE NOCASE", (new, old)
             )
             changed[table] = cur.rowcount
+        # Subjects table: merge into the existing row, or rename the old one.
+        target = conn.execute("SELECT id FROM subjects WHERE name = ?", (new,)).fetchone()
+        source = conn.execute("SELECT id FROM subjects WHERE name = ?", (old,)).fetchone()
+        if source and target and source["id"] != target["id"]:
+            conn.execute("DELETE FROM subjects WHERE id = ?", (source["id"],))
+        elif source:
+            conn.execute("UPDATE subjects SET name = ? WHERE id = ?", (new, source["id"]))
     return changed
 
 
 def save_note(data):
     """Save one generated result (and its flashcards, if any). Returns the new row id."""
     created_at = now()
-    subject = canonical_subject(data.get("subject", ""))
+    subject = canonical_subject(data.get("subject", "")) or UNCATEGORIZED
     with connect() as conn:
+        ensure_subject(conn, subject)
         cur = conn.execute(
-            "INSERT INTO notes (subject, topic, notes, mcqs, created_at) VALUES (?, ?, ?, ?, ?)",
+            """INSERT INTO notes (subject, topic, notes, mcqs, created_at, filename, pdf_path, pdf_hash)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 subject,
                 data.get("topic", ""),
                 json.dumps(data.get("notes", []), ensure_ascii=False),
                 json.dumps(data.get("mcqs", []), ensure_ascii=False),
                 created_at,
+                data.get("filename"),
+                data.get("pdf_path"),
+                data.get("pdf_hash"),
             ),
         )
         note_id = cur.lastrowid
@@ -123,12 +215,21 @@ def save_note(data):
         return note_id
 
 
-def list_notes():
-    """Short list for the sidebar: no notes/mcqs bodies."""
+def list_notes(subject=None):
+    """Short list of notes (newest first), without the notes/mcqs bodies."""
+    sql = """
+        SELECT id, subject, topic, filename, created_at,
+               json_array_length(mcqs) AS mcq_count,
+               (SELECT COUNT(*) FROM cards WHERE cards.note_id = notes.id) AS card_count
+        FROM notes
+    """
+    params = ()
+    if subject:
+        sql += " WHERE subject = ? COLLATE NOCASE"
+        params = (subject,)
+    sql += " ORDER BY id DESC"
     with connect() as conn:
-        rows = conn.execute(
-            "SELECT id, subject, topic, created_at FROM notes ORDER BY id DESC"
-        ).fetchall()
+        rows = conn.execute(sql, params).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -144,16 +245,20 @@ def get_note(note_id):
 
 
 def delete_note(note_id):
-    """Delete a note with its quiz attempts and flashcards. Returns False if it didn't exist.
+    """Delete a note with its quiz attempts and flashcards.
 
-    All three deletes run in one transaction ("with connect()"), so either everything
+    Returns the deleted note row (so the caller can remove its PDF file), or None.
+    All deletes run in one transaction ("with connect()"), so either everything
     is deleted or, if something fails, nothing is.
     """
     with connect() as conn:
+        row = conn.execute("SELECT * FROM notes WHERE id = ?", (note_id,)).fetchone()
+        if row is None:
+            return None
         conn.execute("DELETE FROM attempts WHERE note_id = ?", (note_id,))
         conn.execute("DELETE FROM cards WHERE note_id = ?", (note_id,))
-        cur = conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
-        return cur.rowcount > 0
+        conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
+        return dict(row)
 
 
 # ---------- Quiz attempts ----------

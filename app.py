@@ -62,14 +62,39 @@ def generate_notes(file: UploadFile = File(...), subject: str = Form("")):
     return db.get_note(note_id)
 
 
+# ---------- Subjects ----------
+
 @app.get("/subjects")
 def list_subjects():
-    return db.subjects()
+    """Subject cards for the home page: name, PDFs, cards due today, accuracy."""
+    return db.subject_summaries()
+
+
+class NewSubject(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
+@app.post("/subjects")
+def create_subject(body: NewSubject):
+    """Create a subject. If one with the same name (any case) exists, return that one."""
+    if not body.name.strip():
+        raise HTTPException(400, "Subject name can't be empty.")
+    return db.get_subject(db.create_subject(body.name))
+
+
+@app.get("/subjects/{subject_id}")
+def get_subject(subject_id: int):
+    """Subject overview: the summary plus the 3 weakest topics."""
+    subject = db.get_subject(subject_id)
+    if subject is None:
+        raise HTTPException(404, "Subject not found.")
+    subject["weakest"] = db.progress(subject["name"])[:3]
+    return subject
 
 
 @app.get("/notes")
-def list_notes():
-    return db.list_notes()
+def list_notes(subject: str | None = None):
+    return db.list_notes(subject)
 
 
 @app.get("/notes/{note_id}")

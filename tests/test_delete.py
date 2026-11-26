@@ -47,7 +47,7 @@ def test_delete_cascades_to_attempts_and_cards(client):
     assert count("cards", nid) == 0
     assert client.get("/progress").json() == []
     assert client.get("/cards/due").json() == []
-    assert client.get("/subjects").json() == []
+    assert [s["pdf_count"] for s in client.get("/subjects").json()] == [0]  # subject stays, now empty
 
 
 def test_delete_leaves_other_notes_alone(client):
