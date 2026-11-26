@@ -62,6 +62,11 @@ def generate_notes(file: UploadFile = File(...), subject: str = Form("")):
     return db.get_note(note_id)
 
 
+@app.get("/subjects")
+def list_subjects():
+    return db.subjects()
+
+
 @app.get("/notes")
 def list_notes():
     return db.list_notes()
