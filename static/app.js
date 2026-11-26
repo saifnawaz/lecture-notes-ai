@@ -374,11 +374,18 @@ $("progress-btn").addEventListener("click", showProgress);
 
 // ---------- Daily Revision (flashcards) ----------
 
-let queue = [];       // due cards for this session
-let position = 0;     // index of the card being shown
-let flipped = false;
+const FORGOT = 1;      // "Bhool gaya" -> SM-2 quality 1
+const REMEMBERED = 4;  // "Yaad tha"   -> SM-2 quality 4
 
-// Due count in the nav (all subjects).
+// Session queue. Each item is {card, repeat, nextDays}.
+// repeat = true means a "Bhool gaya" card coming back at the end of the session.
+// Repeats are practice only: SM-2 already scheduled the card on the first answer,
+// so they are not sent to the server again.
+let queue = [];
+let flipped = false;
+let busy = false;
+
+// Due count in the nav.
 async function loadDueCount() {
   const cards = await (await fetch("/cards/due")).json();
   const badge = $("due-badge");
@@ -391,54 +398,32 @@ async function showReview() {
   currentNote = null;
   showView("review");
   highlightActive(null);
-  $("review-feedback").hidden = true;
   document.activeElement.blur(); // so Space flips the card instead of re-clicking a button
+  $("review-feedback").hidden = true;
 
-  // Fill the subject dropdown from all due cards, keeping the selection.
-  const all = await loadDueCount();
-  const select = $("review-subject");
-  const selected = select.value;
-  const subjects = [...new Set(all.map((c) => c.subject).filter(Boolean))].sort();
-  select.innerHTML = "";
-  for (const value of ["", ...subjects]) {
-    const opt = document.createElement("option");
-    opt.value = value;
-    opt.textContent = value || "All subjects";
-    select.appendChild(opt);
-  }
-  select.value = subjects.includes(selected) ? selected : "";
-
-  await loadQueue();
-}
-
-async function loadQueue() {
-  const subject = $("review-subject").value;
-  const url = subject ? `/cards/due?subject=${encodeURIComponent(subject)}` : "/cards/due";
-  queue = await (await fetch(url)).json();
-  position = 0;
+  const cards = await loadDueCount();
+  queue = cards.map((card) => ({ card, repeat: false, nextDays: null }));
   renderCard();
 }
 
 function renderCard() {
-  const left = queue.length - position;
-  $("review-count").textContent = left ? `${left} card${left === 1 ? "" : "s"} due` : "";
+  const left = queue.length;
+  $("review-count").textContent = left ? `${left} left` : "";
   $("review-done").hidden = left > 0;
   $("flashcard").hidden = left === 0;
   $("review-buttons").hidden = true;
   if (left === 0) return;
 
-  const card = queue[position];
   flipped = false;
-  $("fc-meta").textContent = [card.subject, card.subtopic].filter(Boolean).join(" · ");
-  $("fc-front").textContent = card.front;
-  $("fc-back").textContent = card.back;
+  $("fc-front").textContent = queue[0].card.front;
+  $("fc-back").textContent = queue[0].card.back;
   $("fc-back").hidden = true;
   $("fc-hint").hidden = false;
   $("flashcard").classList.remove("flipped");
 }
 
 function flipCard() {
-  if (flipped || position >= queue.length) return;
+  if (flipped || queue.length === 0) return;
   flipped = true;
   $("fc-back").hidden = false;
   $("fc-hint").hidden = true;
@@ -446,52 +431,64 @@ function flipCard() {
   $("review-buttons").hidden = false;
 }
 
-async function answerCard(quality) {
-  if (!flipped) return;
-  const card = queue[position];
-  flipped = false; // block double clicks while saving
-  $("review-buttons").hidden = true;
+function days(n) {
+  return `${n} day${n === 1 ? "" : "s"}`;
+}
 
+async function answerCard(quality) {
+  if (!flipped || busy) return;
+  busy = true;
+  const item = queue.shift();
   const feedback = $("review-feedback");
+  feedback.className = "feedback";
+
   try {
-    const res = await fetch(`/cards/${card.id}/review`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ quality }),
-    });
-    const updated = await res.json();
-    if (!res.ok) throw new Error(updated.detail || "Could not save review.");
-    const days = updated.interval_days;
-    feedback.className = "feedback";
-    feedback.textContent = `Next review of that card in ${days} day${days === 1 ? "" : "s"}.`;
+    if (!item.repeat) {
+      const res = await fetch(`/cards/${item.card.id}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quality }),
+      });
+      item.nextDays = (await readJson(res)).interval_days;
+      loadDueCount();
+    }
+    let text = `next time: in ${days(item.nextDays)}`;
+    if (quality === FORGOT) {
+      queue.push({ ...item, repeat: true }); // see it again at the end of this session
+      text += " · coming back in this session";
+    }
+    feedback.textContent = text;
   } catch (err) {
+    queue.unshift(item); // keep the card so nothing is lost
     feedback.className = "feedback error";
     feedback.textContent = err.message;
   }
   feedback.hidden = false;
-
-  position++;
+  busy = false;
   renderCard();
-  loadDueCount();
 }
 
 $("flashcard").addEventListener("click", flipCard);
 for (const btn of $("review-buttons").querySelectorAll("button")) {
-  btn.addEventListener("click", () => answerCard(Number(btn.dataset.quality)));
+  btn.addEventListener("click", () => {
+    btn.blur();
+    answerCard(Number(btn.dataset.quality));
+  });
 }
 
-// Keyboard: Space flips, 1-4 = Again / Hard / Good / Easy.
+// Keyboard: Space flips, 1 = Bhool gaya, 2 = Yaad tha.
 document.addEventListener("keydown", (event) => {
-  if ($("review-view").hidden || event.target.tagName === "SELECT") return;
+  if ($("review-view").hidden || ["INPUT", "SELECT", "TEXTAREA"].includes(event.target.tagName)) return;
   if (event.code === "Space") {
     event.preventDefault();
     flipCard();
-  } else if (["1", "2", "3", "4"].includes(event.key)) {
-    answerCard([1, 3, 4, 5][Number(event.key) - 1]);
+  } else if (event.key === "1") {
+    answerCard(FORGOT);
+  } else if (event.key === "2") {
+    answerCard(REMEMBERED);
   }
 });
 
-$("review-subject").addEventListener("change", loadQueue);
 $("review-btn").addEventListener("click", showReview);
 
 $("retry-btn").addEventListener("click", () => renderQuiz(currentNote.mcqs));

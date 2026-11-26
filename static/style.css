@@ -190,46 +190,53 @@ select {
 .flashcards-line { display: flex; align-items: center; gap: 0.75rem; margin-top: 1rem; }
 .flashcards-line .muted { margin: 0; }
 
-/* Review page */
+/* Daily Revision */
+.left-count { color: var(--muted); font-weight: 600; }
 .flashcard {
-  min-height: 200px;
-  padding: 1.5rem;
-  margin: 1rem 0;
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  max-width: 640px;
+  min-height: 300px;
+  margin: 1.5rem auto;
+  padding: 2rem;
+  border-radius: 16px;
   background: #fafbfc;
+  box-shadow: 0 2px 12px rgba(31, 36, 48, 0.08);
   cursor: pointer;
   display: flex;
   flex-direction: column;
   justify-content: center;
   text-align: center;
-  transition: border-color 0.15s;
+  outline: none;
 }
-.flashcard:hover { border-color: var(--accent); }
-.flashcard.flipped { cursor: default; border-color: var(--border); }
-.fc-front { font-size: 1.25rem; font-weight: 600; margin: 0.5rem 0; }
+.flashcard.flipped { cursor: default; }
+.fc-front { font-size: 1.5rem; font-weight: 600; margin: 0; }
 .fc-back {
-  margin: 0.75rem 0 0;
-  padding-top: 0.75rem;
-  border-top: 1px dashed var(--border);
-  font-size: 1.05rem;
+  margin: 1.25rem 0 0;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+  font-size: 1.15rem;
+  animation: fade-in 0.2s ease;
 }
-.flashcard .muted { margin: 0.5rem 0 0; }
+.fc-hint { margin: 1.5rem 0 0; color: var(--muted); font-size: 0.8rem; }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 
-.review-buttons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; }
-.review-buttons small { opacity: 0.7; font-weight: 400; margin-left: 0.2rem; }
-.review-buttons .again { background: var(--wrong); }
-.review-buttons .hard { background: #f59f00; }
-.review-buttons .good { background: var(--correct); }
-.review-buttons .easy { background: var(--accent); }
+.review-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  max-width: 640px;
+  margin: 0 auto;
+}
+.review-buttons button { padding: 0.85rem; font-size: 1.05rem; }
+.review-buttons small { opacity: 0.7; font-weight: 400; margin-left: 0.3rem; font-size: 0.8rem; }
+.review-buttons .forgot { background: var(--wrong); }
+.review-buttons .remembered { background: var(--correct); }
 
 .feedback {
-  margin: 0;
-  padding: 0.4rem 0.75rem;
-  border-radius: 8px;
-  background: #edf2ff;
-  color: var(--accent);
+  max-width: 640px;
+  margin: 1rem auto 0;
+  text-align: center;
+  color: var(--muted);
   font-size: 0.9rem;
 }
-.feedback.error { background: var(--wrong-bg); color: var(--wrong); }
-.done { font-weight: 600; color: var(--correct); }
+.feedback.error { color: var(--wrong); }
+.done { text-align: center; font-size: 1.2rem; font-weight: 600; color: var(--correct); margin: 3rem 0; }
