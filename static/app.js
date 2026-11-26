@@ -213,7 +213,7 @@ function renderOverview(body, s) {
       ? el("div", { class: "weak-list" }, s.weakest.map((t) => el("div", { class: "weak-item" },
           el("div", {},
             el("b", {}, t.subtopic),
-            el("small", {}, `${Math.round(t.mastery * 100)}% mastery · ${t.correct} of ${t.attempts} correct`)),
+            el("small", {}, `${t.accuracy}% accuracy · ${t.correct} of ${t.attempts} correct`)),
           el("a", { class: "button secondary", href: `#/s/${s.id}/quiz/${encodeURIComponent(t.subtopic)}` },
             "Practice"))))
       : el("p", { class: "muted" }, "Take a quiz to find your weak topics."),
@@ -547,13 +547,13 @@ function barColor(pct) {
 }
 
 async function renderProgress(body, s) {
-  const rows = await api(`/progress?subject=${encodeURIComponent(s.name)}`); // lowest mastery first
+  const rows = await api(`/progress?subject=${encodeURIComponent(s.name)}`); // sorted weakest first by the server
   if (!rows.length) {
     body.append(el("p", { class: "muted" }, "No quiz answers yet. Take a quiz to see your progress."));
     return;
   }
   body.append(el("div", { class: "progress-list" }, rows.map((r) => {
-    const pct = Math.round(r.mastery * 100);
+    const pct = r.accuracy; // raw correct / attempts, already rounded
     return el("div", { class: "progress-row" },
       el("div", { class: "progress-name" }, r.subtopic || "General"),
       el("div", { class: "bar-track" }, el("div", { class: `bar ${barColor(pct)}`, style: `width: ${pct}%` })),
