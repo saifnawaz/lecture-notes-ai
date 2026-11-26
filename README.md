@@ -35,6 +35,7 @@ API docs are at http://127.0.0.1:8000/docs.
 | GET    | `/notes`      | List saved notes                      |
 | GET    | `/subjects`   | List subject names (case duplicates merged) |
 | GET    | `/notes/{id}` | Get one saved note (with your accuracy) |
+| DELETE | `/notes/{id}` | Delete a note with its quiz answers and flashcards |
 | POST   | `/attempts`   | Save one quiz answer (`note_id`, `question_index`, `chosen`) |
 | GET    | `/progress`   | Mastery per subtopic, lowest first (optional `?subject=`) |
 | POST   | `/notes/{id}/flashcards` | Make flashcards for an older note from its saved text |
