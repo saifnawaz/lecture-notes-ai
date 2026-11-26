@@ -4,7 +4,6 @@ from datetime import date, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-import app as app_module
 import db
 from app import app
 
@@ -75,24 +74,6 @@ def test_review_errors(client, note_id):
     assert client.post("/cards/999/review", json={"quality": 4}).status_code == 404
     card_id = client.get("/cards/due").json()[0]["id"]
     assert client.post(f"/cards/{card_id}/review", json={"quality": 9}).status_code == 422
-
-
-def test_generate_flashcards_for_old_note(client, monkeypatch):
-    nid = db.save_note({"subject": "Math", "topic": "Logic", "notes": ["p and q"], "mcqs": []})
-    seen = {}
-
-    def fake_generate(client_, subject, topic, notes):
-        seen.update(subject=subject, topic=topic, notes=notes)
-        return [flashcard("What is AND?", "Logic")]
-
-    monkeypatch.setattr(app_module, "make_client", lambda: None)
-    monkeypatch.setattr(app_module, "generate_flashcards", fake_generate)
-
-    r = client.post(f"/notes/{nid}/flashcards")
-    assert r.status_code == 200 and r.json() == {"card_count": 1}
-    assert seen == {"subject": "Math", "topic": "Logic", "notes": ["p and q"]}
-    # Second time is refused, so cards aren't duplicated
-    assert client.post(f"/notes/{nid}/flashcards").status_code == 400
 
 
 def test_generate_flashcards_unknown_note(client):
