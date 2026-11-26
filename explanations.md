@@ -134,3 +134,121 @@ It counts every answer, including retries.
 
 ## 16. README
 Added the new routes, a "Weak topics" section and how to run the tests (`pytest`).
+
+---
+
+# Phase 3: flashcards with spaced repetition
+
+## 17. Shuffling quiz options (`shuffle_options` in `study_ai.py`)
+Gemini likes to put the correct answer in the same slot (often A), so you could learn
+"pick A" instead of the material. Before a new note is saved, each question's options are shuffled
+and `answer` is moved to wherever the correct option ended up.
+- We shuffle a list of positions (`order`), not the options directly. `order[new] = old`,
+  so the new answer index is `order.index(old_answer)`.
+- It returns new dicts and doesn't change the input, which makes it easy to test.
+- Notes saved before this change keep their old order.
+
+## 18. `cards` table (`db.py`)
+One row per flashcard: `front`, `back`, `subtopic`, `subject`, the note it came from,
+and the SM-2 state: `ease` (starts 2.5), `interval_days` (0), `repetitions` (0),
+`due_date` and `last_reviewed`.
+- New cards are due **today**, so you can study them right away.
+- `due_date` is stored as `"YYYY-MM-DD"` text. In that format, comparing text is the same as
+  comparing dates (`"2026-01-09" < "2026-01-10"`), so `WHERE due_date <= today` just works.
+- Cards with an empty front or back are skipped, in case the model sends a broken one.
+
+## 19. Getting flashcards from Gemini (`study_ai.py`)
+- The main prompt now also asks for 8-10 flashcards `{front, back, subtopic}`. `save_note()`
+  saves them along with the note.
+- Notes saved before this change have no cards. The note page shows a **Generate flashcards**
+  button, which calls `POST /notes/{id}/flashcards`. That sends the saved notes text (not the PDF)
+  to Gemini with a smaller prompt. It refuses if the note already has cards, so you can't get duplicates.
+- The retry + fallback loop moved into `ask_with_fallback()`, so both prompts share it.
+- In `FLASHCARD_PROMPT` the JSON braces are doubled (`{{ }}`) because `.format()` uses
+  single braces for its `{topic}`, `{notes}` placeholders.
+
+## 20. SM-2 in simple words (`srs.py`)
+**The idea:** you forget things over time, but every time you successfully remember something,
+you forget it more slowly. So review a card *just before* you'd forget it: soon after you first learn it,
+then less and less often. Easy cards get pushed far away; hard cards keep coming back.
+
+Each card remembers three numbers:
+- **repetitions**: how many times in a row you've remembered it.
+- **interval**: how many days until the next review.
+- **ease**: how easy the card is for you, starting at 2.5. It is the number the interval
+  gets multiplied by each time.
+
+After you see the answer, you rate yourself:
+
+| Button | Quality | Meaning                      |
+|--------|---------|------------------------------|
+| Again  | 1       | I forgot it                  |
+| Hard   | 3       | Remembered, but it was hard  |
+| Good   | 4       | Remembered normally          |
+| Easy   | 5       | Remembered instantly         |
+
+**Step 1: the new interval**
+- Forgot (quality below 3): start over. repetitions = 0, see it again **tomorrow**.
+- Remembered: repetitions goes up by 1, then
+  - 1st time in a row → 1 day
+  - 2nd time in a row → 6 days
+  - after that → old interval × ease (rounded)
+
+**Step 2: adjust ease**
+`ease = ease + 0.1 - (5 - q) * (0.08 + (5 - q) * 0.02)`, which works out to:
+
+| Button | Ease change |
+|--------|-------------|
+| Again  | −0.54       |
+| Hard   | −0.14       |
+| Good   | no change   |
+| Easy   | +0.10       |
+
+Ease never goes below **1.3**. Without that floor, a card you keep failing could end up with
+a tiny ease and its interval would hardly grow, so you'd be stuck seeing it almost every day forever.
+
+**Step 3:** `due_date = today + interval`.
+
+**Example**: a new card, pressing Good every time (ease stays 2.5):
+
+| Review | Interval        | Next review in |
+|--------|-----------------|----------------|
+| 1      | 1               | 1 day          |
+| 2      | 6               | 6 days         |
+| 3      | 6 × 2.5 = 15    | 15 days        |
+| 4      | 15 × 2.5 = 37.5 | 38 days        |
+| 5      | 38 × 2.5 = 95   | 95 days        |
+
+Five reviews cover about five months. Press Again at any point and the card goes back to 1 day,
+and its ease drops, so it will also grow more slowly from then on.
+
+Small details:
+- The interval is multiplied by the ease *before* the ease is updated.
+- Rounding is normal rounding (37.5 → 38). Python's `round()` uses "banker's rounding",
+  where `round(12.5)` is 12, so we use `floor(x + 0.5)` instead.
+- `sm2()` takes numbers and returns numbers. It doesn't touch the database, so the tests can check
+  the math directly. It also accepts a `today` so tests can use a fixed date.
+
+## 21. Flashcard API routes (`app.py`)
+- `GET /cards/due?subject=...` returns cards due today or earlier (overdue cards included), oldest first.
+- `POST /cards/{id}/review` with `{"quality": 4}` runs `sm2()` on the card's saved state,
+  stores the result and returns the updated card. `Field(ge=0, le=5)` makes FastAPI
+  reject other numbers with a 422 error.
+- `GET /notes/{id}` now also returns `card_count`.
+
+## 22. Review page (frontend)
+- The sidebar has a **Review** button with a badge showing how many cards are due. It updates after every
+  review and after new cards are made.
+- The page shows one card at a time. Click it (or press Space) to flip, then rate it
+  with the four buttons (or keys 1-4). The next card appears and a line tells you when you'll
+  see the previous one again ("Next review of that card in 6 days").
+- A subject dropdown lets you review one subject at a time.
+- A card you press Again on is due tomorrow, so it won't come back in the same session.
+
+## 23. Tests
+- `tests/test_shuffle.py`: the correct option text is still at `answer` after shuffling,
+  the input isn't changed, and the answer really does move around.
+- `tests/test_srs.py`: each button on a new and a mature card, Good five times gives 1, 6, 15, 38, 95,
+  Again resets progress, and ease never drops below 1.3.
+- `tests/test_cards.py`: the API routes. Gemini is replaced by a fake function (`monkeypatch`),
+  so the "Generate flashcards" test runs without an API key or internet.
