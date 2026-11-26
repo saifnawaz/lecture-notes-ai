@@ -134,6 +134,26 @@ $("gen-cards-btn").addEventListener("click", async () => {
   }
 });
 
+// ---------- Delete note ----------
+
+$("delete-btn").addEventListener("click", async () => {
+  if (!currentNote) return;
+  if (!confirm("Delete this note? Its quiz history and flashcards will also be deleted.")) return;
+
+  const button = $("delete-btn");
+  button.disabled = true;
+  try {
+    await readJson(await fetch(`/notes/${currentNote.id}`, { method: "DELETE" }));
+    showUpload(); // also refreshes the subject dropdown
+    loadNotesList();
+    loadDueCount(); // its flashcards are gone
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    button.disabled = false;
+  }
+});
+
 // ---------- Saved notes sidebar ----------
 
 async function loadNotesList() {

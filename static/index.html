@@ -48,8 +48,13 @@
       <!-- Notes + quiz view -->
       <section id="note-view" hidden>
         <div class="card">
-          <p id="note-subject" class="subject"></p>
-          <h2 id="note-topic"></h2>
+          <div class="note-head">
+            <div>
+              <p id="note-subject" class="subject"></p>
+              <h2 id="note-topic"></h2>
+            </div>
+            <button id="delete-btn" class="danger">Delete</button>
+          </div>
           <p id="note-date" class="muted"></p>
           <p id="note-accuracy" class="accuracy" hidden></p>
           <ul id="note-notes" class="notes"></ul>

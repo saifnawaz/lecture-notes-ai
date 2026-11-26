@@ -240,3 +240,8 @@ select {
 }
 .feedback.error { color: var(--wrong); }
 .done { text-align: center; font-size: 1.2rem; font-weight: 600; color: var(--correct); margin: 3rem 0; }
+
+/* Note header with delete button */
+.note-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
+button.danger { background: transparent; color: var(--wrong); border: 1px solid var(--wrong); padding: 0.4rem 0.8rem; }
+button.danger:hover { background: var(--wrong-bg); }
