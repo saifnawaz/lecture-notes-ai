@@ -101,10 +101,10 @@ def test_progress_math_and_order(client, note_id):
 
     logic, sets = rows
     assert logic["attempts"] == 2 and logic["correct"] == 1
-    assert logic["mastery"] == pytest.approx(2 / 4, abs=0.001)
+    assert logic["accuracy"] == 50
     assert sets["attempts"] == 2 and sets["correct"] == 2
-    assert sets["mastery"] == pytest.approx(3 / 4, abs=0.001)
-    assert set(sets) == {"subject", "subtopic", "attempts", "correct", "mastery"}
+    assert sets["accuracy"] == 100
+    assert set(sets) == {"subject", "subtopic", "attempts", "correct", "accuracy"}  # no smoothed value
 
 
 def test_progress_ties_put_more_attempts_first(client, note_id):
@@ -113,7 +113,6 @@ def test_progress_ties_put_more_attempts_first(client, note_id):
     for _ in range(3):
         answer(client, note_id, 1, 0)
     rows = client.get("/progress").json()
-    assert rows[0]["mastery"] == rows[1]["mastery"]
     assert [r["subtopic"] for r in rows] == ["Logic", "Sets"]
 
 
@@ -133,3 +132,42 @@ def test_note_accuracy(client, note_id):
     answer(client, note_id, 1, 0)  # wrong
     acc = client.get(f"/notes/{note_id}").json()["accuracy"]
     assert acc == {"attempts": 2, "correct": 1, "accuracy": 50}
+
+
+# ---------- raw accuracy is shown, smoothed mastery only sorts ----------
+
+@pytest.fixture
+def three_topics(client):
+    """A: 0 of 3 correct.  B: 1 of 2 correct.  C: 2 of 2 correct."""
+    nid = db.save_note({
+        "subject": "Math",
+        "topic": "Three topics",
+        "notes": [],
+        "mcqs": [mcq("C"), mcq("A"), mcq("B")],  # answer is option 0 for each
+    })
+    q = {"C": 0, "A": 1, "B": 2}
+    for topic, results in {"A": [False] * 3, "B": [True, False], "C": [True, True]}.items():
+        for right in results:
+            answer(client, nid, q[topic], 0 if right else 1)
+    return nid
+
+
+def test_progress_shows_raw_accuracy(client, three_topics):
+    rows = {r["subtopic"]: r for r in client.get("/progress").json()}
+    assert (rows["A"]["correct"], rows["A"]["attempts"], rows["A"]["accuracy"]) == (0, 3, 0)
+    assert (rows["B"]["correct"], rows["B"]["attempts"], rows["B"]["accuracy"]) == (1, 2, 50)
+    assert (rows["C"]["correct"], rows["C"]["attempts"], rows["C"]["accuracy"]) == (2, 2, 100)
+    assert all("mastery" not in r for r in rows.values())
+
+
+def test_progress_sorted_by_smoothed_mastery(client, three_topics):
+    # Smoothed: A = 1/5 = 0.2, B = 2/4 = 0.5, C = 3/4 = 0.75 -> lowest first
+    assert db.mastery_score(0, 3) < db.mastery_score(1, 2) < db.mastery_score(2, 2)
+    assert [r["subtopic"] for r in client.get("/progress").json()] == ["A", "B", "C"]
+
+
+def test_weakest_topics_show_raw_accuracy(client, three_topics):
+    sid = client.get("/subjects").json()[0]["id"]
+    weakest = client.get(f"/subjects/{sid}").json()["weakest"]
+    assert [(t["subtopic"], t["accuracy"]) for t in weakest] == [("A", 0), ("B", 50), ("C", 100)]
+    assert all("mastery" not in t for t in weakest)

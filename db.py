@@ -330,7 +330,10 @@ def mastery_score(correct, attempts):
 
 
 def progress(subject=None):
-    """One row per (subject, subtopic), lowest mastery first."""
+    """One row per (subject, subtopic) with raw accuracy %, lowest mastery first.
+
+    The smoothed mastery score is only used for sorting; it is not returned.
+    """
     sql = """
         SELECT subject, subtopic,
                COUNT(*) AS attempts,
@@ -346,11 +349,11 @@ def progress(subject=None):
     with connect() as conn:
         rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
 
-    for r in rows:
-        r["mastery"] = round(mastery_score(r["correct"], r["attempts"]), 3)
-
     # Lowest mastery first; with equal mastery, more attempts first.
-    rows.sort(key=lambda r: (r["mastery"], -r["attempts"]))
+    rows.sort(key=lambda r: (mastery_score(r["correct"], r["attempts"]), -r["attempts"]))
+
+    for r in rows:
+        r["accuracy"] = round(100 * r["correct"] / r["attempts"])
     return rows
 
 

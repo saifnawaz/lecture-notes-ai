@@ -129,7 +129,10 @@ def subject_quiz(subject_id: int, n: int = Query(10, ge=1, le=50), subtopic: str
     questions = db.subject_questions(subject["name"])
     if subtopic:
         questions = [q for q in questions if q["subtopic"].casefold() == subtopic.casefold()]
-    mastery = {r["subtopic"].casefold(): r["mastery"] for r in db.progress(subject["name"])}
+    mastery = {
+        r["subtopic"].casefold(): db.mastery_score(r["correct"], r["attempts"])
+        for r in db.progress(subject["name"])
+    }
     return pick_questions(questions, mastery, n)
 
 
