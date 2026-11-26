@@ -82,6 +82,14 @@ def get_note(note_id: int):
     return note
 
 
+@app.delete("/notes/{note_id}")
+def delete_note(note_id: int):
+    """Delete a note together with its quiz attempts and flashcards."""
+    if not db.delete_note(note_id):
+        raise HTTPException(404, "Note not found.")
+    return {"deleted": note_id}
+
+
 @app.post("/notes/{note_id}/flashcards")
 def make_flashcards(note_id: int):
     """Create flashcards for an older note from its saved text (no PDF needed)."""

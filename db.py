@@ -143,6 +143,19 @@ def get_note(note_id):
     return note
 
 
+def delete_note(note_id):
+    """Delete a note with its quiz attempts and flashcards. Returns False if it didn't exist.
+
+    All three deletes run in one transaction ("with connect()"), so either everything
+    is deleted or, if something fails, nothing is.
+    """
+    with connect() as conn:
+        conn.execute("DELETE FROM attempts WHERE note_id = ?", (note_id,))
+        conn.execute("DELETE FROM cards WHERE note_id = ?", (note_id,))
+        cur = conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
+        return cur.rowcount > 0
+
+
 # ---------- Quiz attempts ----------
 
 def save_attempt(note_id, question_index, subtopic, subject, chosen, correct):
