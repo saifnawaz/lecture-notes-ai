@@ -341,3 +341,97 @@ shows 92%.
   and the due-card badge.
 - Tests (`tests/test_delete.py`) check the delete, the cascade, that other notes are untouched,
   and the 404 cases.
+
+---
+
+# Restructure around subjects
+
+## 30. A `subjects` table
+Until now a subject was just text on each note, so a subject couldn't exist without a PDF.
+"New subject" needs that, so there's now a small `subjects` table (`id`, `name`).
+- `name` is `UNIQUE COLLATE NOCASE`: "math" and "Math" can't both exist.
+- Notes, attempts and cards still keep their own `subject` text, so all the existing filters
+  (`?subject=`) keep working. The table is the list of subjects; the text links rows to it.
+- **Migrating your existing `notes.db`** happens in `migrate()`, which runs on every start and is safe to repeat:
+  1. Adds the new note columns `filename`, `pdf_path`, `pdf_hash` with `ALTER TABLE`
+     (SQLite has no "add column if missing", so we check `PRAGMA table_info` first).
+  2. Notes with an empty subject go to "Uncategorized".
+  3. Every subject used by a note gets a row in `subjects`.
+  4. Rows are rewritten to the registered spelling ("math" → "Math").
+- Deleting a subject's last PDF keeps the subject (it shows 0 PDFs).
+- `rename_subject.py` now also renames (or merges) the row in `subjects`.
+- **A SQLite gotcha**: when comparing two columns, SQLite uses the collation of the *left* one.
+  `notes.subject = subjects.name` compares case-sensitively, while `subjects.name = notes.subject`
+  ignores case. That's why the queries say `COLLATE NOCASE` explicitly.
+
+## 31. Navigation (`static/app.js`)
+The page is now a small *single-page app*: one HTML page whose content is drawn by JavaScript.
+The part of the URL after `#` says what to show:
+
+| URL                      | Page                               |
+|--------------------------|------------------------------------|
+| `#/`                     | Home: subject cards                |
+| `#/s/3/quiz`             | Subject 3, Quiz tab                |
+| `#/s/3/quiz/Sets`        | Subject 3, quiz on the topic "Sets" (the Practice button) |
+| `#/s/3/pdf/12/notes`     | PDF 12 in subject 3, Notes tab     |
+
+Changing the `#` part doesn't reload the page. It fires a `hashchange` event, and `route()`
+draws the right page. So the browser's Back button works, and you can bookmark a tab.
+- The breadcrumb (Home › Subject › PDF) is rebuilt on every page.
+- `el("div", {class: "x"}, "text", child)` is a tiny helper that builds elements. It always adds
+  text as text (never HTML), so AI text still can't inject anything.
+- Only one keyboard handler is active at a time (`keyHandler`), so the keys of an old quiz
+  stop working when you leave the page.
+
+## 32. Saved PDFs and the duplicate check
+- An uploaded PDF is saved as `uploads/<sha256>.pdf`. `uploads/` is in `.gitignore`.
+- **SHA-256** turns the file's bytes into a 64-character fingerprint. The same file always
+  gives the same fingerprint, even if you rename it, and different files practically never collide.
+- Before generating, the server checks whether that fingerprint already exists *in this subject*.
+  If so, it answers **409 Conflict** instead of calling Gemini. The page asks
+  "Generate notes from it again anyway?", and if you say yes it sends the upload again with `force=true`.
+- Two notes from the same file share one file on disk, so deleting a PDF only removes the file
+  when no other note uses it. If generation fails, the new file is removed again.
+
+## 33. Generate more MCQs / flashcards
+- `POST /notes/{id}/mcqs` and `POST /notes/{id}/flashcards` ask Gemini for new items.
+  They use the saved PDF when there is one. Older notes (or a missing file) fall back to the saved notes text.
+- The prompt lists the existing questions/fronts and says "do NOT repeat these". Models don't
+  always listen, so the server also removes repeats itself: `normalize()` lowercases the text and drops
+  punctuation and extra spaces, and `only_new()` keeps only items whose normalized text is new.
+  "What is a SET?" and "what is a set" count as the same.
+- New MCQs are **added to the end** of the note's list. Old questions keep their position, which
+  matters because saved quiz attempts point at a question by its index.
+- New MCQs get their options shuffled, like the first ones.
+- The old "Generate flashcards" rule (only if the note has none) is gone: you can always add more.
+
+## 34. Subject quiz: weak topics more often (`quiz.py`)
+The Quiz tab mixes MCQs from every PDF in the subject. Picking them is a *weighted* random choice:
+- Each question's weight is `1 - mastery` of its topic. A topic at 20% mastery has weight 0.8,
+  a topic at 90% has weight 0.1, and an untried topic counts as 50% (weight 0.5).
+- Because mastery is smoothed (section 27), it's never exactly 100%, so even your best topics
+  still appear sometimes, just less often.
+- To pick n *different* questions with weights, each question gets the random key
+  `random() ** (1 / weight)` and the n biggest keys win. A big weight pushes the key toward 1,
+  so weak questions usually win, but there's still luck involved. (This is the
+  Efraimidis–Spirakis method: it's short and gives the right probabilities.)
+- `?subtopic=Sets` restricts the quiz to one topic. That's what the **Practice** buttons on the
+  Overview use.
+- The tests check the weighting statistically: over 500 quizzes, weak questions show up more than
+  3 times as often as strong ones, and strong ones still show up.
+
+## 35. End-of-session report
+After a quiz or a Daily Revision session, the question/card and buttons disappear and a report appears:
+- Score: correct/wrong (quiz) or remembered/forgotten (revision), and accuracy %.
+- Every wrong question with the correct answer (and what you chose), or every forgotten card with its answer.
+- **Topics to revise**: the topics where you made a mistake in this session.
+- **Practice mistakes again** starts a new round with only those questions/cards. Practice rounds
+  are **not saved**: no quiz attempts, no SM-2 updates. You just saw the answers, so getting them
+  right a minute later says little about whether you've learned them, and it would make your progress
+  look better than it is.
+- In Daily Revision, a card's result is its **first** answer in the session. If you forgot it and then
+  remembered it when it came back, it still counts as forgotten.
+
+## 36. Also fixed: broken characters
+Some earlier edits saved `static/app.js` and `static/index.html` in the Windows "cp1252" encoding
+instead of UTF-8, so characters like `·` showed up as `�` in the browser. The new files are UTF-8.
