@@ -325,3 +325,19 @@ shows 92%.
   "next time: in X days".
 - The page is just a big centered card and two buttons. The subject filter that used to be here is gone,
   because daily revision means everything that's due.
+
+## 29. Deleting a note
+- `DELETE /notes/{id}` removes the note **and** everything that belongs to it: its quiz attempts
+  (so they disappear from Progress) and its flashcards (so they leave Daily Revision).
+  It returns 404 if the note doesn't exist.
+- `db.delete_note()` deletes from `attempts` and `cards` first, then `notes`, all inside one
+  `with connect()` block. That block is one *transaction*: if anything fails halfway, SQLite undoes all of it,
+  so you can never end up with flashcards pointing at a note that's gone.
+- Why not let the database cascade automatically (`ON DELETE CASCADE`)? SQLite only does that when
+  foreign keys are switched on for every connection, and the existing tables were created without it.
+  Deleting from each table by hand is simple and easy to read.
+- On the note page, **Delete** asks with `confirm()` first, since this can't be undone.
+  Afterwards the app goes back to the upload page and refreshes the sidebar, the subject dropdown
+  and the due-card badge.
+- Tests (`tests/test_delete.py`) check the delete, the cascade, that other notes are untouched,
+  and the 404 cases.
