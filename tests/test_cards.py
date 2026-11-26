@@ -97,3 +97,17 @@ def test_generate_flashcards_for_old_note(client, monkeypatch):
 
 def test_generate_flashcards_unknown_note(client):
     assert client.post("/notes/999/flashcards").status_code == 404
+
+
+def test_two_button_qualities(client, note_id):
+    """Daily Revision sends 1 (Bhool gaya) or 4 (Yaad tha)."""
+    forgot, remembered = [c["id"] for c in client.get("/cards/due").json()]
+
+    card = client.post(f"/cards/{forgot}/review", json={"quality": 1}).json()
+    assert card["interval_days"] == 1 and card["repetitions"] == 0
+    assert card["ease"] == pytest.approx(1.96)
+
+    first = client.post(f"/cards/{remembered}/review", json={"quality": 4}).json()
+    second = client.post(f"/cards/{remembered}/review", json={"quality": 4}).json()
+    assert (first["interval_days"], second["interval_days"]) == (1, 6)
+    assert second["ease"] == pytest.approx(2.5)
