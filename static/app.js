@@ -6,6 +6,23 @@ const LETTERS = "ABCD";
 
 let currentNote = null;
 
+// Read a JSON response, or throw an Error with a readable message.
+// Works even if the server sent plain text (e.g. "Internal Server Error").
+async function readJson(res) {
+  const text = await res.text();
+  let data = null;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    // not JSON
+  }
+  if (!res.ok) {
+    const detail = data && typeof data.detail === "string" ? data.detail : "";
+    throw new Error(detail || `Server error (${res.status}). Please try again.`);
+  }
+  return data;
+}
+
 // ---------- Views ----------
 
 // Show one section (upload / note / weak / review) and hide the others.
@@ -64,9 +81,7 @@ $("gen-cards-btn").addEventListener("click", async () => {
   button.disabled = true;
   $("card-info").textContent = "Making flashcards...";
   try {
-    const res = await fetch(`/notes/${noteId}/flashcards`, { method: "POST" });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || "Something went wrong.");
+    const data = await readJson(await fetch(`/notes/${noteId}/flashcards`, { method: "POST" }));
     if (currentNote && currentNote.id === noteId) showCardInfo(data.card_count);
     loadDueCount();
   } catch (err) {
@@ -140,8 +155,7 @@ $("upload-form").addEventListener("submit", async (event) => {
 
   try {
     const res = await fetch("/generate", { method: "POST", body: form });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || "Something went wrong.");
+    const data = await readJson(res);
 
     status.textContent = "";
     $("upload-form").reset();
@@ -150,7 +164,8 @@ $("upload-form").addEventListener("submit", async (event) => {
     loadDueCount();
   } catch (err) {
     status.className = "error";
-    status.textContent = err.message;
+    // A network failure (server down) gives a TypeError with a vague message.
+    status.textContent = err instanceof TypeError ? "Could not reach the server." : err.message;
   } finally {
     button.disabled = false;
   }
