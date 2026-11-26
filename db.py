@@ -244,6 +244,21 @@ def get_note(note_id):
     return note
 
 
+def find_note_by_hash(subject, pdf_hash):
+    """A note in this subject made from the same PDF file, or None."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT id, topic FROM notes WHERE subject = ? COLLATE NOCASE AND pdf_hash = ? LIMIT 1",
+            (subject, pdf_hash),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def count_notes_with_pdf(pdf_path):
+    with connect() as conn:
+        return conn.execute("SELECT COUNT(*) FROM notes WHERE pdf_path = ?", (pdf_path,)).fetchone()[0]
+
+
 def delete_note(note_id):
     """Delete a note with its quiz attempts and flashcards.
 

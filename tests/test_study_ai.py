@@ -115,6 +115,7 @@ def test_generate_flashcards_unwraps_list():
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "test.db"))
     monkeypatch.setattr(app_module, "make_client", lambda: None)
+    monkeypatch.setattr(app_module, "UPLOAD_DIR", tmp_path / "uploads")
     with TestClient(app_module.app) as c:
         yield c
 

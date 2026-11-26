@@ -2,13 +2,13 @@
 
 Run with:  uvicorn app:app --reload
 """
+import hashlib
 import logging
-import os
-import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -17,6 +17,7 @@ import srs
 from study_ai import GenerationError, generate, generate_flashcards, make_client, shuffle_options
 
 MAX_UPLOAD_MB = 20
+UPLOAD_DIR = Path("uploads")  # saved PDFs, named by their SHA-256 hash
 GENERIC_ERROR = "Something went wrong while talking to the AI. Please try again."
 log = logging.getLogger(__name__)
 
@@ -30,8 +31,18 @@ async def lifespan(app):
 app = FastAPI(title="Lecture Notes AI", lifespan=lifespan)
 
 
+def remove_pdf_if_unused(pdf_path):
+    """Delete a saved PDF unless another note still uses it (same file = same hash)."""
+    if pdf_path and db.count_notes_with_pdf(pdf_path) == 0:
+        Path(pdf_path).unlink(missing_ok=True)
+
+
 @app.post("/generate")
-def generate_notes(file: UploadFile = File(...), subject: str = Form("")):
+def generate_notes(
+    file: UploadFile = File(...),
+    subject: str = Form(""),
+    force: bool = Form(False),  # True = "yes, generate again" after a duplicate warning
+):
     if not (file.filename or "").lower().endswith(".pdf"):
         raise HTTPException(400, "Please upload a PDF file.")
 
@@ -39,23 +50,34 @@ def generate_notes(file: UploadFile = File(...), subject: str = Form("")):
     if len(content) > MAX_UPLOAD_MB * 1024 * 1024:
         raise HTTPException(400, f"PDF is larger than {MAX_UPLOAD_MB} MB.")
 
-    # Gemini's upload needs a file on disk, so write a temporary copy.
-    tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+    # Same bytes = same hash, so this finds the same PDF even if it was renamed.
+    pdf_hash = hashlib.sha256(content).hexdigest()
+    subject = db.canonical_subject(subject)
+    if subject and not force:
+        existing = db.find_note_by_hash(subject, pdf_hash)
+        if existing:
+            return JSONResponse(status_code=409, content={
+                "detail": f'This PDF is already in {subject} as "{existing["topic"]}".',
+                "duplicate_of": existing["id"],
+            })
+
+    # Keep the PDF (named by its hash) so we can make more questions from it later.
+    UPLOAD_DIR.mkdir(exist_ok=True)
+    pdf_path = (UPLOAD_DIR / f"{pdf_hash}.pdf").as_posix()
+    Path(pdf_path).write_bytes(content)
     try:
-        tmp.write(content)
-        tmp.close()
-        data = generate(make_client(), tmp.name)
-    except GenerationError as e:
-        raise HTTPException(502, str(e))
-    except Exception:
+        data = generate(make_client(), pdf_path)
+    except Exception as e:
+        remove_pdf_if_unused(pdf_path)
+        if isinstance(e, GenerationError):
+            raise HTTPException(502, str(e))
         # Anything unexpected (network, Gemini SDK, ...) still gets a readable message.
         log.exception("generate failed")
         raise HTTPException(502, GENERIC_ERROR)
-    finally:
-        os.unlink(tmp.name)  # always delete the temp file
 
-    if subject.strip():
-        data["subject"] = subject.strip()  # user's choice wins over Gemini's guess
+    if subject:
+        data["subject"] = subject  # user's choice wins over Gemini's guess
+    data.update(filename=file.filename, pdf_path=pdf_path, pdf_hash=pdf_hash)
 
     data["mcqs"] = shuffle_options(data["mcqs"])
     note_id = db.save_note(data)
@@ -109,9 +131,11 @@ def get_note(note_id: int):
 
 @app.delete("/notes/{note_id}")
 def delete_note(note_id: int):
-    """Delete a note together with its quiz attempts and flashcards."""
-    if not db.delete_note(note_id):
+    """Delete a note together with its quiz attempts, flashcards and saved PDF."""
+    deleted = db.delete_note(note_id)
+    if deleted is None:
         raise HTTPException(404, "Note not found.")
+    remove_pdf_if_unused(deleted["pdf_path"])
     return {"deleted": note_id}
 
 
