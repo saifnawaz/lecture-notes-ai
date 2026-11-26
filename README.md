@@ -39,7 +39,7 @@ API docs are at http://127.0.0.1:8000/docs.
 | GET    | `/progress`   | Mastery per subtopic, lowest first (optional `?subject=`) |
 | POST   | `/notes/{id}/flashcards` | Make flashcards for an older note from its saved text |
 | GET    | `/cards/due`  | Flashcards due today or earlier (optional `?subject=`) |
-| POST   | `/cards/{id}/review` | Review one card (`quality`: 1 Again, 3 Hard, 4 Good, 5 Easy) |
+| POST   | `/cards/{id}/review` | Review one card (`quality` 0-5; the page sends 1 = Bhool gaya, 4 = Yaad tha) |
 
 ## Progress
 
@@ -62,7 +62,8 @@ python rename_subject.py "discrete" "Discrete Mathematics"
 
 Each new note comes with 8-10 flashcards. For notes saved earlier, open the note and click
 **Generate flashcards**. The **Daily Revision** page (the badge shows how many are due) shows one card
-at a time: click or press Space to flip, then rate it Again / Hard / Good / Easy (keys 1-4).
+at a time: click or press Space to flip, then press **Bhool gaya** (forgot, key 1) or
+**Yaad tha** (remembered, key 2). Forgotten cards come back at the end of the session.
 Cards are scheduled with the SM-2 spaced repetition algorithm (`srs.py`), explained in `explanations.md`.
 
 ## Run the tests
