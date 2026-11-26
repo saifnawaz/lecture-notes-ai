@@ -504,5 +504,105 @@ async function renderProgress(body, s) {
   })));
 }
 
+// ---------- PDF page: Notes | Quiz | Flashcards ----------
+
+const PDF_TABS = [["notes", "Notes"], ["quiz", "Quiz"], ["flashcards", "Flashcards"]];
+let flashMessage = ""; // shown once on the next PDF page render (after "Generate more")
+
+async function showPdf(sid, nid, tab) {
+  const [subject, note] = await Promise.all([api(`/subjects/${sid}`), api(`/notes/${nid}`)]);
+  setBreadcrumb([{ label: subject.name, href: `#/s/${sid}` }, { label: note.topic || "Untitled" }]);
+
+  const status = el("p", { class: "status" }, flashMessage);
+  flashMessage = "";
+  const buttons = [];
+
+  // "Generate more" buttons: show progress, then redraw the page with the result.
+  function generateButton(label, path, describe) {
+    const button = el("button", { class: "secondary" }, label);
+    button.addEventListener("click", async () => {
+      buttons.forEach((b) => (b.disabled = true));
+      status.className = "status";
+      status.textContent = "Generating... this can take a minute.";
+      try {
+        flashMessage = describe(await api(path, { method: "POST" }));
+        await route();
+      } catch (err) {
+        status.className = "status error";
+        status.textContent = err.message;
+        buttons.forEach((b) => (b.disabled = false));
+      }
+    });
+    buttons.push(button);
+    return button;
+  }
+
+  const deleteButton = el("button", { class: "danger" }, "Delete PDF");
+  deleteButton.addEventListener("click", async () => {
+    if (!confirm("Delete this PDF? Its notes, quiz history and flashcards will also be deleted.")) return;
+    try {
+      await api(`/notes/${nid}`, { method: "DELETE" });
+      location.hash = `#/s/${sid}/pdfs`;
+    } catch (err) {
+      status.className = "status error";
+      status.textContent = err.message;
+    }
+  });
+  buttons.push(deleteButton);
+
+  const body = el("div", { class: "tab-body" });
+  app.replaceChildren(
+    el("div", { class: "pdf-head" },
+      el("div", {},
+        el("h2", { class: "page-title" }, note.topic || "Untitled"),
+        el("p", { class: "muted" },
+          [note.filename, new Date(note.created_at).toLocaleDateString()].filter(Boolean).join(" · "))),
+      el("div", { class: "actions" },
+        generateButton("Generate more MCQs", `/notes/${nid}/mcqs`, (r) =>
+          r.added ? `Added ${plural(r.added, "new MCQ")}.` : "No new MCQs this time (all were repeats). Try again."),
+        generateButton("Generate more flashcards", `/notes/${nid}/flashcards`, (r) =>
+          r.added ? `Added ${plural(r.added, "new flashcard")}.` : "No new flashcards this time (all were repeats). Try again."),
+        deleteButton)),
+    status,
+    tabs(PDF_TABS.map(([key, label]) => {
+      const count = key === "quiz" ? ` (${note.mcqs.length})` : key === "flashcards" ? ` (${note.card_count})` : "";
+      return [key, label + count, `#/s/${sid}/pdf/${nid}/${key}`];
+    }), tab),
+    body,
+  );
+
+  if (tab === "quiz") {
+    const questions = note.mcqs.map((q, i) => ({
+      ...q, note_id: nid, question_index: i, subtopic: q.subtopic || note.topic,
+    }));
+    runQuiz(body, questions, { title: note.topic, backHref: `#/s/${sid}` });
+  } else if (tab === "flashcards") {
+    await renderNoteCards(body, nid);
+  } else {
+    renderNotes(body, note);
+  }
+}
+
+function renderNotes(body, note) {
+  const acc = note.accuracy;
+  body.append(
+    acc ? el("p", { class: "accuracy" }, `Your quiz accuracy: ${acc.accuracy}% (${acc.correct} of ${acc.attempts})`) : null,
+    el("ul", { class: "notes" }, note.notes.map((text) => el("li", {}, text))),
+  );
+}
+
+async function renderNoteCards(body, nid) {
+  const cards = await api(`/notes/${nid}/cards`);
+  if (!cards.length) {
+    body.append(el("p", { class: "muted" }, "No flashcards yet. Click \"Generate more flashcards\"."));
+    return;
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  body.append(el("div", { class: "card-list" }, cards.map((c) => el("div", { class: "card-item" },
+    el("b", {}, c.front),
+    el("p", {}, c.back),
+    el("small", {}, c.due_date <= today ? "due now" : `next review: ${new Date(c.due_date).toLocaleDateString()}`)))));
+}
+
 // ---------- Start ----------
 route();

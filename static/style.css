@@ -261,3 +261,27 @@ a.subject-card:hover { box-shadow: 0 4px 14px rgba(31, 36, 48, 0.1); transform: 
   .progress-row { grid-template-columns: 1fr 90px; gap: 0.5rem 1rem; }
   .progress-row .bar-track { grid-column: 1 / -1; grid-row: 2; }
 }
+
+/* ---------- PDF page ---------- */
+.pdf-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
+.pdf-head .page-title { margin-bottom: 0.25rem; }
+.pdf-head .muted { margin: 0; }
+.actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.actions button { padding: 0.45rem 0.85rem; font-size: 0.9rem; }
+.pdf-head + .status { min-height: 1.4rem; margin-bottom: 0.5rem; }
+.notes { padding-left: 1.25rem; }
+.notes li { margin-bottom: 0.6rem; }
+.accuracy {
+  display: inline-block;
+  margin: 0 0 1rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+.card-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.75rem; }
+.card-item { padding: 1rem; background: var(--card); border-radius: 10px; }
+.card-item p { margin: 0.4rem 0; }
+.card-item small { color: var(--muted); font-size: 0.8rem; }
