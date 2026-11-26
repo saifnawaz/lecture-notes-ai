@@ -597,11 +597,16 @@ async function renderNoteCards(body, nid) {
     body.append(el("p", { class: "muted" }, "No flashcards yet. Click \"Generate more flashcards\"."));
     return;
   }
-  const today = new Date().toISOString().slice(0, 10);
+  // Local "YYYY-MM-DD" (toISOString would give the UTC date, which can be a day off).
+  const now = new Date();
+  const today = [now.getFullYear(), now.getMonth() + 1, now.getDate()]
+    .map((n) => String(n).padStart(2, "0")).join("-");
   body.append(el("div", { class: "card-list" }, cards.map((c) => el("div", { class: "card-item" },
     el("b", {}, c.front),
     el("p", {}, c.back),
-    el("small", {}, c.due_date <= today ? "due now" : `next review: ${new Date(c.due_date).toLocaleDateString()}`)))));
+    el("small", {}, c.due_date <= today
+      ? "due now"
+      : `next review: ${new Date(`${c.due_date}T00:00`).toLocaleDateString()}`)))));
 }
 
 // ---------- Start ----------
