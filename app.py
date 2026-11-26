@@ -9,10 +9,11 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import db
-from study_ai import GenerationError, generate, make_client, shuffle_options
+import srs
+from study_ai import GenerationError, generate, generate_flashcards, make_client, shuffle_options
 
 MAX_UPLOAD_MB = 20
 
@@ -65,7 +66,24 @@ def get_note(note_id: int):
     if note is None:
         raise HTTPException(404, "Note not found.")
     note["accuracy"] = db.note_accuracy(note_id)  # None if quiz never tried
+    note["card_count"] = db.count_cards(note_id)
     return note
+
+
+@app.post("/notes/{note_id}/flashcards")
+def make_flashcards(note_id: int):
+    """Create flashcards for an older note from its saved text (no PDF needed)."""
+    note = db.get_note(note_id)
+    if note is None:
+        raise HTTPException(404, "Note not found.")
+    if db.count_cards(note_id) > 0:
+        raise HTTPException(400, "This note already has flashcards.")
+    try:
+        cards = generate_flashcards(make_client(), note["subject"], note["topic"], note["notes"])
+    except GenerationError as e:
+        raise HTTPException(502, str(e))
+    db.save_cards(note_id, note["subject"], cards)
+    return {"card_count": db.count_cards(note_id)}
 
 
 class Attempt(BaseModel):
@@ -100,6 +118,31 @@ def record_attempt(attempt: Attempt):
 @app.get("/weakness")
 def get_weakness(subject: str | None = None):
     return db.weakness(subject)
+
+
+# ---------- Flashcards ----------
+
+@app.get("/cards/due")
+def get_due_cards(subject: str | None = None):
+    return db.due_cards(subject)
+
+
+class Review(BaseModel):
+    """One flashcard review: Again=1, Hard=3, Good=4, Easy=5."""
+    quality: int = Field(ge=0, le=5)
+
+
+@app.post("/cards/{card_id}/review")
+def review_card(card_id: int, review: Review):
+    card = db.get_card(card_id)
+    if card is None:
+        raise HTTPException(404, "Card not found.")
+    result = srs.sm2(review.quality, card["ease"], card["interval_days"], card["repetitions"])
+    db.update_card(
+        card_id, result["ease"], result["interval_days"], result["repetitions"],
+        result["due_date"].isoformat(),
+    )
+    return db.get_card(card_id)
 
 
 # Serve the frontend (static/index.html at "/"). Must come after the API routes.
