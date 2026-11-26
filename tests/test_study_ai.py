@@ -147,3 +147,48 @@ def test_generate_route_unexpected_error_is_502(client, monkeypatch):
     r = upload(client)
     assert r.status_code == 502
     assert r.json()["detail"] == app_module.GENERIC_ERROR
+
+
+# ---------- Gemini client errors ----------
+
+def client_error(code, status, message):
+    return study_ai.errors.ClientError(code, {"error": {"code": code, "status": status, "message": message}})
+
+
+class RaisingClient(FakeClient):
+    """Raises the given error on every generate_content call."""
+
+    def __init__(self, error):
+        super().__init__([])
+        self.error = error
+        self.models_tried = []
+
+    def generate_content(self, model, contents, config):
+        self.models_tried.append(model)
+        raise self.error
+
+
+def test_file_error_fails_without_trying_other_models(tmp_path, capsys):
+    client = RaisingClient(client_error(404, "NOT_FOUND", "File abc123 not found or no permission."))
+    with pytest.raises(GenerationError, match="couldn't read the uploaded file"):
+        study_ai.generate(client, tmp_path / "x.pdf")
+    assert client.models_tried == [study_ai.MODEL]  # stopped at the first model
+    assert "File abc123 not found" in capsys.readouterr().out  # real message is logged
+
+
+def test_model_error_moves_to_next_model(tmp_path, capsys):
+    client = RaisingClient(client_error(404, "NOT_FOUND", "models/old-model is not found for API version v1beta."))
+    with pytest.raises(GenerationError, match="couldn't produce usable notes"):
+        study_ai.generate(client, tmp_path / "x.pdf")
+    assert client.models_tried == [study_ai.MODEL] + study_ai.FALLBACKS
+    assert "is not found for API version" in capsys.readouterr().out
+
+
+def test_upload_error_is_a_generation_error(tmp_path):
+    client = FakeClient([])
+
+    def bad_upload(file, config=None):
+        raise client_error(400, "INVALID_ARGUMENT", "Uploaded file is empty.")
+    client.upload = bad_upload
+    with pytest.raises(GenerationError, match="Uploaded file is empty"):
+        study_ai.generate(client, tmp_path / "x.pdf", b"")

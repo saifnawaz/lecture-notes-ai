@@ -194,11 +194,26 @@ def ask(client, model, contents, validate):
     return data
 
 
+def describe(e):
+    """Readable text for a Gemini API error: code, status and the actual message."""
+    return f"{e.code} {e.status or ''}: {e.message or e.details}".replace(" :", ":")
+
+
+def is_file_error(e):
+    """True if a ClientError is about the attached file, not the model.
+
+    A 404 can mean "file not found" as well as "model not found", so we look at the message.
+    Trying another model won't help with a bad file.
+    """
+    text = str(e.message or e.details or "").lower()
+    return any(word in text for word in ("file", "document", "mime", "pdf", "page"))
+
+
 def ask_with_fallback(client, contents, validate):
     """Try the main model, then each fallback, with retries.
 
     A bad answer (broken JSON or wrong shape) is retried.
-    Raises GenerationError if everything fails.
+    A file error stops right away. Raises GenerationError if everything fails.
     """
     for model in [MODEL] + FALLBACKS:
         for attempt in range(1, RETRIES + 1):
@@ -209,7 +224,12 @@ def ask_with_fallback(client, contents, validate):
                 print("  Server busy.")
                 time.sleep(attempt * 3)
             except errors.ClientError as e:
-                print(f"  {model} not usable: {e.code}")
+                print(f"  {model} failed: {describe(e)}")
+                if is_file_error(e):
+                    raise GenerationError(
+                        f"Gemini couldn't read the uploaded file ({e.message or e.code}). "
+                        "Check that it's a valid, non-empty PDF."
+                    ) from e
                 break
             except json.JSONDecodeError:
                 print("  Bad JSON from model, retrying.")
@@ -234,7 +254,7 @@ def upload_file(client, file_path, content=None):
             config=types.UploadFileConfig(mime_type="application/pdf", display_name=file_path.name),
         )
     except errors.ClientError as e:
-        print(f"  Upload failed: {e}")
+        print(f"  Upload failed: {describe(e)}")
         raise GenerationError(f"Couldn't upload the file to Gemini ({e.message or e.code}).") from e
 
 
