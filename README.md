@@ -1,6 +1,6 @@
 # Lecture Notes AI
 
-Upload a lecture PDF and get study notes, a 5-question quiz and flashcards, generated with Google Gemini.
+Organise lecture PDFs by subject and get study notes, quizzes and flashcards, generated with Google Gemini.
 Works as a web app (FastAPI) or from the command line.
 
 ## Setup
@@ -25,47 +25,60 @@ Works as a web app (FastAPI) or from the command line.
 uvicorn app:app --reload
 ```
 
-Open http://127.0.0.1:8000 and upload a PDF. Results are saved in `notes.db` (SQLite).
+Open http://127.0.0.1:8000. Results are saved in `notes.db` (SQLite) and uploaded PDFs in `uploads/`.
 
 API docs are at http://127.0.0.1:8000/docs.
 
+## How the app is organised
+
+- **Home**: one card per subject (PDFs, cards due today, quiz accuracy) and **+ New subject**.
+- **Subject page** with tabs:
+  - **Overview**: accuracy, cards due today, your 3 weakest topics with a **Practice** button
+  - **PDFs**: the PDFs in this subject and **Upload PDF** (the subject is filled in for you)
+  - **Quiz**: 10 questions mixed from all PDFs in the subject; weak topics come up more often
+  - **Daily Revision**: this subject's flashcards that are due today
+  - **Progress**: a mastery bar per topic, lowest first
+- **PDF page** with tabs **Notes | Quiz | Flashcards**, plus **Generate more MCQs**,
+  **Generate more flashcards** (new items are added, repeats skipped) and **Delete PDF**.
+- A breadcrumb at the top (Home › Subject › PDF) takes you back up.
+
+Uploading the same PDF twice into one subject asks first. After every quiz and every
+Daily Revision session you get a report: score, the questions/cards you got wrong with the
+right answers, topics to revise, and **Practice mistakes again** (practice rounds aren't saved).
+
+In Daily Revision, click the card or press Space to flip it, then press **Bhool gaya**
+(forgot, key 1) or **Yaad tha** (remembered, key 2). Forgotten cards come back at the end of the
+session. Cards are scheduled with the SM-2 spaced repetition algorithm (`srs.py`).
+In quizzes, keys 1-4 pick an option and Enter goes to the next question.
+See `explanations.md` for how everything works.
+
 | Method | Route         | What it does                          |
 |--------|---------------|---------------------------------------|
-| POST   | `/generate`   | Upload a PDF (`file`, optional `subject`) and get notes + MCQs |
-| GET    | `/notes`      | List saved notes                      |
-| GET    | `/subjects`   | List subject names (case duplicates merged) |
-| GET    | `/notes/{id}` | Get one saved note (with your accuracy) |
-| DELETE | `/notes/{id}` | Delete a note with its quiz answers and flashcards |
+| GET    | `/subjects`   | Subject cards: PDFs, cards due today, accuracy |
+| POST   | `/subjects`   | Create a subject (`name`); returns the existing one if the name is taken |
+| GET    | `/subjects/{id}` | Subject overview, including the 3 weakest topics |
+| GET    | `/subjects/{id}/quiz` | Mixed MCQs, weak topics more often (`?n=`, `?subtopic=`) |
+| POST   | `/generate`   | Upload a PDF (`file`, `subject`, `force`); 409 if it's already in that subject |
+| GET    | `/notes`      | List PDFs/notes (optional `?subject=`) |
+| GET    | `/notes/{id}` | One note with your accuracy and card count |
+| DELETE | `/notes/{id}` | Delete a note with its quiz answers, flashcards and saved PDF |
+| POST   | `/notes/{id}/mcqs` | Add new MCQs (from the saved PDF, or the notes text) |
+| POST   | `/notes/{id}/flashcards` | Add new flashcards (from the saved PDF, or the notes text) |
+| GET    | `/notes/{id}/cards` | All flashcards of one note |
 | POST   | `/attempts`   | Save one quiz answer (`note_id`, `question_index`, `chosen`) |
 | GET    | `/progress`   | Mastery per subtopic, lowest first (optional `?subject=`) |
-| POST   | `/notes/{id}/flashcards` | Make flashcards for an older note from its saved text |
 | GET    | `/cards/due`  | Flashcards due today or earlier (optional `?subject=`) |
 | POST   | `/cards/{id}/review` | Review one card (`quality` 0-5; the page sends 1 = Bhool gaya, 4 = Yaad tha) |
 
-## Progress
+## Renaming or merging subjects
 
-Every quiz answer is saved. The **Progress** page shows a mastery bar for each subtopic,
-lowest first. Mastery is `(correct + 1) / (attempts + 2)`, so one lucky or unlucky answer
-doesn't make a topic look perfect or hopeless. See `explanations.md` for details.
-
-## Subjects
-
-When uploading, pick an existing subject or choose **+ New subject...**. Subjects are matched
-ignoring case, so "discrete mathematics" joins "Discrete Mathematics". To merge two different
-names, use the rename script (it updates notes, quiz answers and flashcards):
+Subjects are matched ignoring case, so "discrete mathematics" joins "Discrete Mathematics".
+To merge two different names, use the rename script (it updates notes, quiz answers and flashcards):
 
 ```
 python rename_subject.py                                  # list subjects
 python rename_subject.py "discrete" "Discrete Mathematics"
 ```
-
-## Flashcards
-
-Each new note comes with 8-10 flashcards. For notes saved earlier, open the note and click
-**Generate flashcards**. The **Daily Revision** page (the badge shows how many are due) shows one card
-at a time: click or press Space to flip, then press **Bhool gaya** (forgot, key 1) or
-**Yaad tha** (remembered, key 2). Forgotten cards come back at the end of the session.
-Cards are scheduled with the SM-2 spaced repetition algorithm (`srs.py`), explained in `explanations.md`.
 
 ## Run the tests
 
@@ -86,6 +99,7 @@ python main.py --models
 - `app.py`: FastAPI server
 - `db.py`: SQLite storage
 - `srs.py`: SM-2 spaced repetition math
+- `quiz.py`: picks subject quiz questions, weak topics more often
 - `rename_subject.py`: rename or merge a subject
 - `static/`: frontend (HTML, CSS, JS)
 - `main.py`: command-line version
