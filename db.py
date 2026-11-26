@@ -1,7 +1,7 @@
 """SQLite storage for generated notes."""
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 DB_PATH = "notes.db"
 
@@ -40,6 +40,23 @@ def init_db():
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS cards (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                note_id INTEGER REFERENCES notes(id),
+                front TEXT,
+                back TEXT,
+                subtopic TEXT,
+                subject TEXT,
+                ease REAL DEFAULT 2.5,
+                interval_days INTEGER DEFAULT 0,
+                repetitions INTEGER DEFAULT 0,
+                due_date TEXT,       -- "YYYY-MM-DD", so text comparison = date comparison
+                last_reviewed TEXT
+            )
+            """
+        )
 
 
 def now():
@@ -47,7 +64,7 @@ def now():
 
 
 def save_note(data):
-    """Save one generated result. Returns the new row id."""
+    """Save one generated result (and its flashcards, if any). Returns the new row id."""
     created_at = now()
     with connect() as conn:
         cur = conn.execute(
@@ -60,7 +77,9 @@ def save_note(data):
                 created_at,
             ),
         )
-        return cur.lastrowid
+        note_id = cur.lastrowid
+        insert_cards(conn, note_id, data.get("subject", ""), data.get("flashcards", []))
+        return note_id
 
 
 def list_notes():
@@ -146,3 +165,60 @@ def note_accuracy(note_id):
         "correct": row["correct"],
         "accuracy": round(100 * row["correct"] / row["attempts"]),
     }
+
+
+# ---------- Flashcards ----------
+
+def today():
+    return date.today().isoformat()
+
+
+def insert_cards(conn, note_id, subject, cards):
+    """Insert flashcards for a note. New cards are due today."""
+    conn.executemany(
+        """INSERT INTO cards (note_id, front, back, subtopic, subject, due_date)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        [
+            (note_id, c.get("front", ""), c.get("back", ""), c.get("subtopic", ""), subject, today())
+            for c in cards
+            if c.get("front") and c.get("back")  # skip broken cards from the model
+        ],
+    )
+
+
+def save_cards(note_id, subject, cards):
+    with connect() as conn:
+        insert_cards(conn, note_id, subject, cards)
+
+
+def count_cards(note_id):
+    with connect() as conn:
+        return conn.execute("SELECT COUNT(*) FROM cards WHERE note_id = ?", (note_id,)).fetchone()[0]
+
+
+def get_card(card_id):
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM cards WHERE id = ?", (card_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def due_cards(subject=None, on=None):
+    """Cards due on the given day (default today) or earlier, oldest due first."""
+    sql = "SELECT * FROM cards WHERE due_date <= ?"
+    params = [on or today()]
+    if subject:
+        sql += " AND subject = ?"
+        params.append(subject)
+    sql += " ORDER BY due_date, id"
+    with connect() as conn:
+        return [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+
+def update_card(card_id, ease, interval_days, repetitions, due_date):
+    with connect() as conn:
+        conn.execute(
+            """UPDATE cards
+               SET ease = ?, interval_days = ?, repetitions = ?, due_date = ?, last_reviewed = ?
+               WHERE id = ?""",
+            (ease, interval_days, repetitions, due_date, now(), card_id),
+        )
