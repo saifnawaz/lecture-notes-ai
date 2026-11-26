@@ -33,18 +33,30 @@ API docs are at http://127.0.0.1:8000/docs.
 |--------|---------------|---------------------------------------|
 | POST   | `/generate`   | Upload a PDF (`file`, optional `subject`) and get notes + MCQs |
 | GET    | `/notes`      | List saved notes                      |
+| GET    | `/subjects`   | List subject names (case duplicates merged) |
 | GET    | `/notes/{id}` | Get one saved note (with your accuracy) |
 | POST   | `/attempts`   | Save one quiz answer (`note_id`, `question_index`, `chosen`) |
-| GET    | `/weakness`   | Subtopics sorted weakest first (optional `?subject=`) |
+| GET    | `/progress`   | Mastery per subtopic, lowest first (optional `?subject=`) |
 | POST   | `/notes/{id}/flashcards` | Make flashcards for an older note from its saved text |
 | GET    | `/cards/due`  | Flashcards due today or earlier (optional `?subject=`) |
 | POST   | `/cards/{id}/review` | Review one card (`quality`: 1 Again, 3 Hard, 4 Good, 5 Easy) |
 
 ## Progress
 
-Every quiz answer is saved. The **Progress** page ranks subtopics by a smoothed
-error rate, `(wrong + 1) / (attempts + 2)`, so one lucky or unlucky answer doesn't
-make a topic look perfect or hopeless. See `explanations.md` for details.
+Every quiz answer is saved. The **Progress** page shows a mastery bar for each subtopic,
+lowest first. Mastery is `(correct + 1) / (attempts + 2)`, so one lucky or unlucky answer
+doesn't make a topic look perfect or hopeless. See `explanations.md` for details.
+
+## Subjects
+
+When uploading, pick an existing subject or choose **+ New subject...**. Subjects are matched
+ignoring case, so "discrete mathematics" joins "Discrete Mathematics". To merge two different
+names, use the rename script (it updates notes, quiz answers and flashcards):
+
+```
+python rename_subject.py                                  # list subjects
+python rename_subject.py "discrete" "Discrete Mathematics"
+```
 
 ## Flashcards
 
@@ -72,6 +84,7 @@ python main.py --models
 - `app.py`: FastAPI server
 - `db.py`: SQLite storage
 - `srs.py`: SM-2 spaced repetition math
+- `rename_subject.py`: rename or merge a subject
 - `static/`: frontend (HTML, CSS, JS)
 - `main.py`: command-line version
 - `tests/`: pytest tests
