@@ -156,21 +156,21 @@ def save_attempt(note_id, question_index, subtopic, subject, chosen, correct):
         return cur.lastrowid
 
 
-def weakness_score(wrong, attempts):
-    """Smoothed error rate: (wrong + 1) / (attempts + 2).
+def mastery_score(correct, attempts):
+    """Smoothed accuracy: (correct + 1) / (attempts + 2). Higher = better.
 
     With no data it starts at 0.5 ("don't know yet") and moves toward
-    the real error rate as more attempts come in.
+    the real accuracy as more attempts come in.
     """
-    return (wrong + 1) / (attempts + 2)
+    return (correct + 1) / (attempts + 2)
 
 
-def weakness(subject=None):
-    """One row per (subject, subtopic), weakest first."""
+def progress(subject=None):
+    """One row per (subject, subtopic), lowest mastery first."""
     sql = """
         SELECT subject, subtopic,
                COUNT(*) AS attempts,
-               SUM(correct = 0) AS wrong
+               SUM(correct) AS correct
         FROM attempts
     """
     params = ()
@@ -183,13 +183,11 @@ def weakness(subject=None):
         rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
 
     for r in rows:
-        r["accuracy"] = round(100 * (r["attempts"] - r["wrong"]) / r["attempts"])
-        r["score"] = round(weakness_score(r["wrong"], r["attempts"]), 3)
+        r["mastery"] = round(mastery_score(r["correct"], r["attempts"]), 3)
 
-    # Weakest (highest score) first; with equal scores, more attempts first.
-    rows.sort(key=lambda r: (-r["score"], -r["attempts"]))
+    # Lowest mastery first; with equal mastery, more attempts first.
+    rows.sort(key=lambda r: (r["mastery"], -r["attempts"]))
     return rows
-
 
 
 def note_accuracy(note_id):

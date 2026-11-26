@@ -1,4 +1,4 @@
-"""Tests for /attempts, /weakness and the weakness score math.
+"""Tests for /attempts, /progress and the mastery score math.
 
 Run with:  pytest
 """
@@ -37,20 +37,20 @@ def note_id(client):
     })
 
 
-# ---------- score math ----------
+# ---------- mastery math ----------
 
-def test_score_with_no_attempts_is_half():
-    assert db.weakness_score(wrong=0, attempts=0) == 0.5
-
-
-def test_score_one_right_one_wrong():
-    assert db.weakness_score(wrong=0, attempts=1) == pytest.approx(1 / 3)
-    assert db.weakness_score(wrong=1, attempts=1) == pytest.approx(2 / 3)
+def test_mastery_with_no_attempts_is_half():
+    assert db.mastery_score(correct=0, attempts=0) == 0.5
 
 
-def test_score_approaches_real_error_rate():
-    # 10 wrong out of 100 = 10% real error rate
-    assert db.weakness_score(wrong=10, attempts=100) == pytest.approx(11 / 102)
+def test_mastery_one_right_one_wrong():
+    assert db.mastery_score(correct=1, attempts=1) == pytest.approx(2 / 3)
+    assert db.mastery_score(correct=0, attempts=1) == pytest.approx(1 / 3)
+
+
+def test_mastery_approaches_real_accuracy():
+    # 90 right out of 100 = 90% real accuracy
+    assert db.mastery_score(correct=90, attempts=100) == pytest.approx(91 / 102)
 
 
 # ---------- POST /attempts ----------
@@ -79,41 +79,52 @@ def test_attempt_bad_indexes(client, note_id):
     assert client.post("/attempts", json={"note_id": note_id, "question_index": 0, "chosen": 7}).status_code == 400
 
 
-# ---------- GET /weakness ----------
+# ---------- GET /progress ----------
 
 def answer(client, note_id, question_index, chosen):
     client.post("/attempts", json={"note_id": note_id, "question_index": question_index, "chosen": chosen})
 
 
-def test_weakness_empty(client):
-    assert client.get("/weakness").json() == []
+def test_progress_empty(client):
+    assert client.get("/progress").json() == []
 
 
-def test_weakness_math_and_order(client, note_id):
+def test_progress_math_and_order(client, note_id):
     # Sets: 2 right.  Logic: 1 right, 1 wrong.
     answer(client, note_id, 0, 0)
     answer(client, note_id, 0, 0)
     answer(client, note_id, 1, 2)
     answer(client, note_id, 1, 0)
 
-    rows = client.get("/weakness").json()
-    assert [r["subtopic"] for r in rows] == ["Logic", "Sets"]  # weakest first
+    rows = client.get("/progress").json()
+    assert [r["subtopic"] for r in rows] == ["Logic", "Sets"]  # lowest mastery first
 
     logic, sets = rows
-    assert logic["attempts"] == 2 and logic["wrong"] == 1 and logic["accuracy"] == 50
-    assert logic["score"] == pytest.approx(2 / 4, abs=0.001)
-    assert sets["attempts"] == 2 and sets["wrong"] == 0 and sets["accuracy"] == 100
-    assert sets["score"] == pytest.approx(1 / 4, abs=0.001)
+    assert logic["attempts"] == 2 and logic["correct"] == 1
+    assert logic["mastery"] == pytest.approx(2 / 4, abs=0.001)
+    assert sets["attempts"] == 2 and sets["correct"] == 2
+    assert sets["mastery"] == pytest.approx(3 / 4, abs=0.001)
+    assert set(sets) == {"subject", "subtopic", "attempts", "correct", "mastery"}
 
 
-def test_weakness_subject_filter(client, note_id):
+def test_progress_ties_put_more_attempts_first(client, note_id):
+    answer(client, note_id, 0, 1)        # Sets: 0 of 1 -> (0+1)/(1+2) = 1/3
+    answer(client, note_id, 1, 2)        # Logic: 1 of 4 -> (1+1)/(4+2) = 1/3
+    for _ in range(3):
+        answer(client, note_id, 1, 0)
+    rows = client.get("/progress").json()
+    assert rows[0]["mastery"] == rows[1]["mastery"]
+    assert [r["subtopic"] for r in rows] == ["Logic", "Sets"]
+
+
+def test_progress_subject_filter(client, note_id):
     other = db.save_note({"subject": "Physics", "topic": "Motion", "notes": [], "mcqs": [mcq("Speed")]})
     answer(client, note_id, 0, 0)
     answer(client, other, 0, 1)
 
-    rows = client.get("/weakness", params={"subject": "Physics"}).json()
+    rows = client.get("/progress", params={"subject": "Physics"}).json()
     assert [r["subtopic"] for r in rows] == ["Speed"]
-    assert len(client.get("/weakness").json()) == 2
+    assert len(client.get("/progress").json()) == 2
 
 
 def test_note_accuracy(client, note_id):

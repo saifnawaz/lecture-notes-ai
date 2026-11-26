@@ -130,9 +130,9 @@ def record_attempt(attempt: Attempt):
     return {"id": attempt_id, "correct": correct, "subtopic": subtopic, "subject": note["subject"]}
 
 
-@app.get("/weakness")
-def get_weakness(subject: str | None = None):
-    return db.weakness(subject)
+@app.get("/progress")
+def get_progress(subject: str | None = None):
+    return db.progress(subject)
 
 
 # ---------- Flashcards ----------

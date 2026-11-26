@@ -37,7 +37,7 @@ def test_filters_ignore_case(client):
     nid = note("Math", flashcards=[{"front": "F", "back": "B"}])
     client.post("/attempts", json={"note_id": nid, "question_index": 0, "chosen": 0})
     assert len(client.get("/cards/due", params={"subject": "MATH"}).json()) == 1
-    assert len(client.get("/weakness", params={"subject": "math"}).json()) == 1
+    assert len(client.get("/progress", params={"subject": "math"}).json()) == 1
 
 
 def test_rename_merges_subjects_everywhere(client):
@@ -50,7 +50,7 @@ def test_rename_merges_subjects_everywhere(client):
     assert client.get("/subjects").json() == ["Discrete Mathematics"]
     assert db.get_note(a)["subject"] == "Discrete Mathematics"
     assert client.get("/cards/due").json()[0]["subject"] == "Discrete Mathematics"
-    assert client.get("/weakness").json()[0]["subject"] == "Discrete Mathematics"
+    assert client.get("/progress").json()[0]["subject"] == "Discrete Mathematics"
 
 
 def test_rename_can_fix_case_only(client):
