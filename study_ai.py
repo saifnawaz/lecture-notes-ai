@@ -5,6 +5,7 @@ Used by both main.py (CLI) and app.py (web server).
 import json
 import os
 import random
+import re
 import time
 from pathlib import Path
 
@@ -49,8 +50,8 @@ Rules:
 """
 
 FLASHCARD_PROMPT = """You are a study assistant for a university student.
-Below are study notes on "{topic}" ({subject}).
-Make 8 to 10 flashcards from them and return ONLY valid JSON in this exact shape:
+{source}
+Make 8 to 10 NEW flashcards and return ONLY valid JSON in this exact shape:
 
 {{
   "flashcards": [
@@ -61,10 +62,32 @@ Make 8 to 10 flashcards from them and return ONLY valid JSON in this exact shape
 Rules:
 - Front: one clear question or term. Back: a short answer (1-2 sentences). Keep formulas.
 - Cover the key definitions, formulas and ideas.
+- Do NOT repeat or rephrase any of these existing flashcards:
+{existing}
+{notes}"""
 
-Notes:
-{notes}
-"""
+MCQ_PROMPT = """You are a study assistant for a university student.
+{source}
+Make 5 NEW multiple-choice questions and return ONLY valid JSON in this exact shape:
+
+{{
+  "mcqs": [
+    {{
+      "question": "question text",
+      "options": ["A option", "B option", "C option", "D option"],
+      "answer": 0,
+      "subtopic": "which subtopic this tests",
+      "explanation": "one line on why the answer is correct"
+    }}
+  ]
+}}
+
+Rules:
+- "answer" is the index (0-3) of the correct option.
+- Questions must test understanding, not just copying lines.
+- Do NOT repeat or rephrase any of these existing questions:
+{existing}
+{notes}"""
 
 
 class GenerationError(Exception):
@@ -95,7 +118,19 @@ def validate_notes(data):
         raise BadResponse('"topic" missing or not text')
     for key in ("notes", "mcqs", "flashcards"):
         check_list(data, key)
-    for q in data["mcqs"]:
+    check_mcqs(data["mcqs"])
+
+
+def validate_mcqs(data):
+    """Raise BadResponse unless data looks like MCQ_PROMPT's JSON."""
+    if not isinstance(data, dict):
+        raise BadResponse(f"expected an object, got {type(data).__name__}")
+    check_list(data, "mcqs")
+    check_mcqs(data["mcqs"])
+
+
+def check_mcqs(mcqs):
+    for q in mcqs:
         ok = (
             isinstance(q, dict)
             and isinstance(q.get("question"), str)
@@ -193,11 +228,49 @@ def generate(client, file_path):
     return ask_with_fallback(client, [uploaded, PROMPT], validate_notes)
 
 
-def generate_flashcards(client, subject, topic, notes):
-    """Make flashcards from already-saved notes text (no PDF needed)."""
-    prompt = FLASHCARD_PROMPT.format(
-        subject=subject or "unknown subject",
-        topic=topic or "untitled",
-        notes="\n".join(f"- {n}" for n in notes),
+def normalize(text):
+    """Lowercase, drop punctuation and extra spaces: for spotting duplicates."""
+    return " ".join(re.sub(r"[^\w\s]", " ", str(text).lower()).split())
+
+
+def only_new(items, existing, key):
+    """Keep items whose item[key] isn't already in existing (or earlier in items)."""
+    seen = {normalize(e) for e in existing}
+    fresh = []
+    for item in items:
+        text = normalize(item.get(key, "")) if isinstance(item, dict) else ""
+        if text and text not in seen:
+            seen.add(text)
+            fresh.append(item)
+    return fresh
+
+
+def ask_more(client, template, validate, subject, topic, notes, existing, pdf_path):
+    """Ask for more items, from the original PDF if we have it, else from the notes text."""
+    about = f'"{topic or "untitled"}" ({subject or "unknown subject"})'
+    if pdf_path and Path(pdf_path).exists():
+        source = f"Use the attached study material on {about}."
+        notes_block = ""
+        contents = [client.files.upload(file=Path(pdf_path))]
+    else:
+        source = f"Use the study notes below on {about}."
+        notes_block = "\nNotes:\n" + "\n".join(f"- {n}" for n in notes)
+        contents = []
+    prompt = template.format(
+        source=source,
+        existing="\n".join(f"- {e}" for e in existing) or "- (none yet)",
+        notes=notes_block,
     )
-    return ask_with_fallback(client, [prompt], validate_flashcards)["flashcards"]
+    return ask_with_fallback(client, contents + [prompt], validate)
+
+
+def generate_flashcards(client, subject, topic, notes, existing=(), pdf_path=None):
+    """Make new flashcards that don't repeat the existing fronts."""
+    data = ask_more(client, FLASHCARD_PROMPT, validate_flashcards, subject, topic, notes, existing, pdf_path)
+    return only_new(data["flashcards"], existing, "front")
+
+
+def generate_mcqs(client, subject, topic, notes, existing=(), pdf_path=None):
+    """Make new MCQs (options shuffled) that don't repeat the existing questions."""
+    data = ask_more(client, MCQ_PROMPT, validate_mcqs, subject, topic, notes, existing, pdf_path)
+    return shuffle_options(only_new(data["mcqs"], existing, "question"))

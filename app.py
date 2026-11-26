@@ -14,7 +14,9 @@ from pydantic import BaseModel, Field
 
 import db
 import srs
-from study_ai import GenerationError, generate, generate_flashcards, make_client, shuffle_options
+from study_ai import (
+    GenerationError, generate, generate_flashcards, generate_mcqs, make_client, shuffle_options,
+)
 
 MAX_UPLOAD_MB = 20
 UPLOAD_DIR = Path("uploads")  # saved PDFs, named by their SHA-256 hash
@@ -139,23 +141,53 @@ def delete_note(note_id: int):
     return {"deleted": note_id}
 
 
-@app.post("/notes/{note_id}/flashcards")
-def make_flashcards(note_id: int):
-    """Create flashcards for an older note from its saved text (no PDF needed)."""
+def generate_more(note_id, generator, existing_of):
+    """Shared code for "Generate more MCQs / flashcards".
+
+    Uses the saved PDF if there is one, otherwise the note's saved text.
+    The generator drops anything that repeats an existing item.
+    """
     note = db.get_note(note_id)
     if note is None:
         raise HTTPException(404, "Note not found.")
-    if db.count_cards(note_id) > 0:
-        raise HTTPException(400, "This note already has flashcards.")
     try:
-        cards = generate_flashcards(make_client(), note["subject"], note["topic"], note["notes"])
+        return note, generator(
+            make_client(), note["subject"], note["topic"], note["notes"],
+            existing=existing_of(note), pdf_path=note["pdf_path"],
+        )
     except GenerationError as e:
         raise HTTPException(502, str(e))
     except Exception:
-        log.exception("generate_flashcards failed")
+        log.exception("generate more failed")
         raise HTTPException(502, GENERIC_ERROR)
+
+
+@app.post("/notes/{note_id}/flashcards")
+def make_flashcards(note_id: int):
+    """Add new flashcards to a note (old ones are kept, duplicates skipped)."""
+    note, cards = generate_more(
+        note_id, generate_flashcards, lambda n: [c["front"] for c in db.note_cards(note_id)]
+    )
+    before = db.count_cards(note_id)
     db.save_cards(note_id, note["subject"], cards)
-    return {"card_count": db.count_cards(note_id)}
+    total = db.count_cards(note_id)
+    return {"added": total - before, "card_count": total}
+
+
+@app.post("/notes/{note_id}/mcqs")
+def make_mcqs(note_id: int):
+    """Add new MCQs to a note (old ones are kept, duplicates skipped)."""
+    note, mcqs = generate_more(note_id, generate_mcqs, lambda n: [q["question"] for q in n["mcqs"]])
+    total = db.add_mcqs(note_id, mcqs)
+    return {"added": len(mcqs), "mcq_count": total}
+
+
+@app.get("/notes/{note_id}/cards")
+def list_note_cards(note_id: int):
+    """All flashcards of one note (for the PDF page's Flashcards tab)."""
+    if db.get_note(note_id) is None:
+        raise HTTPException(404, "Note not found.")
+    return db.note_cards(note_id)
 
 
 class Attempt(BaseModel):

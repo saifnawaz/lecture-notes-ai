@@ -244,6 +244,18 @@ def get_note(note_id):
     return note
 
 
+def add_mcqs(note_id, new_mcqs):
+    """Append MCQs to a note. Old questions keep their index, so saved attempts stay valid."""
+    with connect() as conn:
+        row = conn.execute("SELECT mcqs FROM notes WHERE id = ?", (note_id,)).fetchone()
+        mcqs = json.loads(row["mcqs"]) + list(new_mcqs)
+        conn.execute(
+            "UPDATE notes SET mcqs = ? WHERE id = ?",
+            (json.dumps(mcqs, ensure_ascii=False), note_id),
+        )
+        return len(mcqs)
+
+
 def find_note_by_hash(subject, pdf_hash):
     """A note in this subject made from the same PDF file, or None."""
     with connect() as conn:
@@ -361,6 +373,12 @@ def insert_cards(conn, note_id, subject, cards):
 def save_cards(note_id, subject, cards):
     with connect() as conn:
         insert_cards(conn, note_id, subject, cards)
+
+
+def note_cards(note_id):
+    with connect() as conn:
+        rows = conn.execute("SELECT * FROM cards WHERE note_id = ? ORDER BY id", (note_id,)).fetchall()
+    return [dict(r) for r in rows]
 
 
 def count_cards(note_id):
