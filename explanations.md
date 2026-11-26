@@ -252,3 +252,76 @@ Small details:
   Again resets progress, and ease never drops below 1.3.
 - `tests/test_cards.py`: the API routes. Gemini is replaced by a fake function (`monkeypatch`),
   so the "Generate flashcards" test runs without an API key or internet.
+
+---
+
+# Fixes and UI changes
+
+## 24. Upload crash: Gemini sometimes sends `[ {...} ]`
+**The bug:** we asked for a JSON object, but Gemini sometimes wrapped it in a list. `json.loads` worked
+fine, but then `data.get("mcqs")` crashed (lists have no `.get`). That error wasn't caught, so FastAPI
+answered with a 500 "Internal Server Error".
+
+**The fix, in three layers:**
+1. `unwrap()` in `study_ai.py`: if the answer is a list holding exactly one dict, use that dict.
+2. `validate_notes()` checks the shape: `topic` is text, `notes`/`mcqs`/`flashcards` are lists,
+   and every MCQ has a question, at least 2 options and an `answer` index that exists.
+   If not, it raises `BadResponse`, and `ask_with_fallback()` retries, exactly like broken JSON.
+   (The flashcard-only prompt has its own smaller check, `validate_flashcards()`.)
+3. If every model and retry fails, `GenerationError` becomes a **502** with a readable message.
+   `app.py` also catches *any other* unexpected error and returns a 502 with a generic message
+   (the real error is still printed in the server log), so the browser never gets a bare 500.
+
+On the page, `readJson()` reads the response as text first and then tries to parse it. So even if
+the server sends something that isn't JSON, the upload page shows a clear message instead of a
+confusing "Unexpected token" error.
+
+Tests (`tests/test_study_ai.py`) use a `FakeClient` that pretends to be Gemini and returns
+whatever answers we give it, so we can test a list-wrapped answer, a wrong shape followed by
+a good one (retry works), and always-bad answers (ends in `GenerationError`) without internet.
+
+## 25. One subject, many spellings
+"discrete" and "Discrete Mathematics" were saved as separate subjects because they're different text.
+- **Upload form:** the subject is now a dropdown of existing subjects (from `GET /subjects`), plus
+  "Let the AI guess" and "+ New subject...", which shows a text box. Picking from a list avoids typos.
+- **Case-insensitive:** `canonical_subject()` runs when a note is saved. If the subject matches an existing
+  one ignoring case, the existing spelling is used ("DISCRETE mathematics" → "Discrete Mathematics").
+  The `?subject=` filters use SQL's `COLLATE NOCASE`, which compares text ignoring upper/lower case.
+- **Merging:** different names like "discrete" vs "Discrete Mathematics" can't be matched automatically,
+  so `rename_subject.py` does it by hand:
+  `python rename_subject.py "discrete" "Discrete Mathematics"`.
+  It updates the `notes`, `attempts` and `cards` tables, because each stores its own copy of the subject.
+
+## 26. Page names
+"Weak topics" is now **Progress** and "Review" is now **Daily Revision**. That's the names
+people see in the sidebar and headings. Since the page now shows mastery, the API route changed too:
+`GET /weakness` → `GET /progress`.
+
+## 27. Progress page: mastery instead of weakness
+The old bar showed accuracy, but its color came from a separate weakness score, which was confusing:
+two bars of the same length could have different colors. Now there is one number:
+
+`mastery = (correct + 1) / (attempts + 2)`. Higher = better.
+
+It's the same smoothing trick as before (section 10), just turned around: pretend you already answered
+one question right and one wrong. A topic you got right once shows 67%, not 100%. Ten right in a row
+shows 92%.
+
+- The bar's **length is the mastery**, and its **color depends only on the length**:
+  under 25% red, 25-75% yellow, over 75% green. So same length = same color, always.
+- Each row: topic, subject, bar, mastery %, "X of Y correct". Lowest mastery first,
+  so what needs work is at the top. If two topics tie, the one with more attempts comes first.
+- The legend and the weak / so-so / strong labels are gone. The colors speak for themselves.
+
+## 28. Daily Revision: two buttons
+- **Bhool gaya** sends SM-2 quality 1 and **Yaad tha** sends quality 4. `srs.py` is unchanged.
+  It still works with any quality from 0 to 5, so going back to four buttons later only means changing the page.
+- Keys: Space flips, 1 = Bhool gaya, 2 = Yaad tha.
+- **Forgotten cards come back at the end of the session.** The first "Bhool gaya" is sent to the server
+  (the card's ease drops and it's due tomorrow). The card then goes to the back of the queue. That second
+  showing is **practice only** and is not sent again. Original SM-2 works this way too: repeats inside a
+  session don't change the schedule. Otherwise forgetting a card twice in one sitting would punish its ease twice.
+- "X left" counts what's still in the queue, including cards coming back. After each answer the page shows
+  "next time: in X days".
+- The page is just a big centered card and two buttons. The subject filter that used to be here is gone,
+  because daily revision means everything that's due.
