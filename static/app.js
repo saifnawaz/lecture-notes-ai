@@ -362,10 +362,56 @@ async function saveAttempt(q, chosen) {
 }
 
 function finishQuiz(container, results, opts) {
+  const wrong = results.filter((r) => !r.correct);
+  showReport(container, {
+    good: results.length - wrong.length,
+    goodLabel: "correct",
+    bad: wrong.length,
+    badLabel: "wrong",
+    mistakesTitle: "Wrong answers",
+    mistakes: wrong.map((r) => el("li", {},
+      el("p", { class: "m-question" }, r.q.question),
+      el("p", { class: "m-answer" }, "Correct: ", el("b", {}, r.q.options[r.q.answer])),
+      el("p", { class: "m-yours" }, `You chose: ${r.q.options[r.chosen]}`),
+      r.q.explanation ? el("p", { class: "m-note" }, r.q.explanation) : null)),
+    topics: wrong.map((r) => r.q.subtopic),
+    onPractice: () => runQuiz(container, wrong.map((r) => r.q), { ...opts, practice: true, title: "Practice mistakes" }),
+    backHref: opts.backHref,
+  });
+}
+
+// ---------- End-of-session report (quiz and Daily Revision) ----------
+
+function unique(list) {
+  const seen = new Map(); // lowercase -> first spelling
+  for (const item of list) {
+    if (item && !seen.has(item.toLowerCase())) seen.set(item.toLowerCase(), item);
+  }
+  return [...seen.values()];
+}
+
+// r: {good, goodLabel, bad, badLabel, mistakesTitle, mistakes: [li], topics, onPractice, backHref}
+function showReport(container, r) {
   keyHandler = null;
-  const correct = results.filter((r) => r.correct).length;
-  container.replaceChildren(el("p", { class: "done" }, `Done: ${correct} of ${results.length} correct.`),
-    el("a", { class: "button secondary", href: opts.backHref }, "Back to subject"));
+  const total = r.good + r.bad;
+  const pct = total ? Math.round((100 * r.good) / total) : 0;
+  const topics = unique(r.topics);
+
+  container.replaceChildren(el("div", { class: "session report" },
+    el("h3", {}, "Session complete"),
+    el("div", { class: "stat-row" },
+      stat(r.good, r.goodLabel, "good"),
+      stat(r.bad, r.badLabel, r.bad ? "bad" : ""),
+      stat(`${pct}%`, "accuracy")),
+    r.bad
+      ? [el("h4", {}, r.mistakesTitle), el("ul", { class: "mistakes" }, r.mistakes)]
+      : el("p", { class: "done" }, "No mistakes. Well done!"),
+    topics.length
+      ? [el("h4", {}, "Topics to revise"), el("div", { class: "chips" }, topics.map((t) => el("span", { class: "chip" }, t)))]
+      : null,
+    el("div", { class: "report-actions" },
+      r.bad ? el("button", { onclick: r.onPractice }, "Practice mistakes again") : null,
+      el("a", { class: "button secondary", href: r.backHref }, "Back to subject"))));
 }
 
 // ---------- Subject: Daily Revision tab ----------
@@ -471,11 +517,22 @@ function runRevision(container, cards, opts) {
   render();
 }
 
+// results: one entry per card, from its first showing in this session.
 function finishRevision(container, results, opts) {
-  keyHandler = null;
-  const remembered = results.filter((r) => r.remembered).length;
-  container.replaceChildren(el("p", { class: "done" }, `Done: ${remembered} of ${results.length} remembered.`),
-    el("a", { class: "button secondary", href: opts.backHref }, "Back to subject"));
+  const forgotten = results.filter((r) => !r.remembered);
+  showReport(container, {
+    good: results.length - forgotten.length,
+    goodLabel: "remembered",
+    bad: forgotten.length,
+    badLabel: "forgotten",
+    mistakesTitle: "Forgotten cards",
+    mistakes: forgotten.map((r) => el("li", {},
+      el("p", { class: "m-question" }, r.card.front),
+      el("p", { class: "m-answer" }, r.card.back))),
+    topics: forgotten.map((r) => r.card.subtopic),
+    onPractice: () => runRevision(container, forgotten.map((r) => r.card), { ...opts, practice: true }),
+    backHref: opts.backHref,
+  });
 }
 
 // ---------- Subject: Progress tab ----------

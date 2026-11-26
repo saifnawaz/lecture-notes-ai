@@ -285,3 +285,17 @@ a.subject-card:hover { box-shadow: 0 4px 14px rgba(31, 36, 48, 0.1); transform: 
 .card-item { padding: 1rem; background: var(--card); border-radius: 10px; }
 .card-item p { margin: 0.4rem 0; }
 .card-item small { color: var(--muted); font-size: 0.8rem; }
+
+/* ---------- End-of-session report ---------- */
+.report h3 { margin: 0 0 1.25rem; font-size: 1.3rem; }
+.report h4 { margin: 1.75rem 0 0.75rem; font-size: 0.95rem; }
+.mistakes { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.mistakes li { padding: 0.85rem 1rem; background: var(--card); border-radius: 10px; }
+.mistakes p { margin: 0; }
+.m-question { font-weight: 600; }
+.m-answer { margin-top: 0.3rem !important; color: var(--correct); }
+.m-yours { color: var(--wrong); font-size: 0.9rem; }
+.m-note { color: var(--muted); font-size: 0.85rem; margin-top: 0.3rem !important; }
+.chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.chip { padding: 0.25rem 0.75rem; border-radius: 999px; background: var(--accent-bg); color: var(--accent); font-size: 0.85rem; font-weight: 600; }
+.report-actions { display: flex; gap: 0.75rem; margin-top: 2rem; }
