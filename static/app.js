@@ -36,7 +36,50 @@ function showUpload() {
   currentNote = null;
   showView("upload");
   highlightActive(null);
+  loadSubjectOptions();
 }
+
+// ---------- Upload subject picker ----------
+
+const NEW_SUBJECT = "__new__";
+
+// Fill the dropdown: "Let the AI guess", existing subjects, "+ New subject...".
+async function loadSubjectOptions() {
+  const select = $("subject-select");
+  const selected = select.value;
+  const subjects = await (await fetch("/subjects")).json();
+
+  select.innerHTML = "";
+  const options = [["", "Let the AI guess"], ...subjects.map((s) => [s, s]), [NEW_SUBJECT, "+ New subject..."]];
+  for (const [value, label] of options) {
+    const opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = label;
+    select.appendChild(opt);
+  }
+  if ([...select.options].some((o) => o.value === selected)) select.value = selected;
+  toggleNewSubject();
+}
+
+function toggleNewSubject() {
+  const isNew = $("subject-select").value === NEW_SUBJECT;
+  $("new-subject-label").hidden = !isNew;
+  $("new-subject").required = isNew;
+  if (isNew) $("new-subject").focus();
+}
+
+// If the typed name matches an existing subject (any case), use the existing one.
+function chosenSubject() {
+  const value = $("subject-select").value;
+  if (value !== NEW_SUBJECT) return value;
+  const typed = $("new-subject").value.trim();
+  const match = [...$("subject-select").options].find(
+    (o) => o.value !== NEW_SUBJECT && o.value && o.value.toLowerCase() === typed.toLowerCase()
+  );
+  return match ? match.value : typed;
+}
+
+$("subject-select").addEventListener("change", toggleNewSubject);
 
 function showNote(note) {
   currentNote = note;
@@ -145,7 +188,7 @@ $("upload-form").addEventListener("submit", async (event) => {
 
   const form = new FormData();
   form.append("file", $("file").files[0]);
-  form.append("subject", $("subject").value);
+  form.append("subject", chosenSubject());
 
   const status = $("status");
   const button = $("submit-btn");
@@ -161,6 +204,7 @@ $("upload-form").addEventListener("submit", async (event) => {
     $("upload-form").reset();
     showNote(data);
     loadNotesList();
+    loadSubjectOptions();
     loadDueCount();
   } catch (err) {
     status.className = "error";
@@ -451,4 +495,5 @@ $("new-btn").addEventListener("click", showUpload);
 
 // ---------- Start ----------
 loadNotesList();
+loadSubjectOptions();
 loadDueCount();

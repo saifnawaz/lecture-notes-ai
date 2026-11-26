@@ -31,8 +31,14 @@
           <label>PDF file
             <input type="file" id="file" accept=".pdf,application/pdf" required>
           </label>
-          <label>Subject (optional)
-            <input type="text" id="subject" placeholder="e.g. Discrete Mathematics">
+          <label>Subject
+            <select id="subject-select">
+              <option value="">Let the AI guess</option>
+              <option value="__new__">+ New subject...</option>
+            </select>
+          </label>
+          <label id="new-subject-label" hidden>New subject name
+            <input type="text" id="new-subject" placeholder="e.g. Discrete Mathematics">
           </label>
           <button type="submit" id="submit-btn">Generate notes</button>
         </form>
