@@ -435,3 +435,16 @@ After a quiz or a Daily Revision session, the question/card and buttons disappea
 ## 36. Also fixed: broken characters
 Some earlier edits saved `static/app.js` and `static/index.html` in the Windows "cp1252" encoding
 instead of UTF-8, so characters like `·` showed up as `�` in the browser. The new files are UTF-8.
+
+## 37. Progress shows raw accuracy again
+Section 27 put the smoothed mastery on screen, so one right answer showed 67% instead of 100%.
+That was confusing. Now the two numbers have separate jobs:
+
+- **What you see** (bar length, bar color, the % text) is raw accuracy: `correct / attempts`, rounded.
+  0 of 3 → 0% (red), 1 of 2 → 50% (yellow), 2 of 2 → 100% (green).
+  Colors are the same as before: under 25% red, 25-75% yellow, over 75% green.
+- **The order** still uses the smoothed `(correct + 1) / (attempts + 2)`, lowest first, so a topic
+  with 0 of 1 right isn't treated as worse than one with 0 of 10. The quiz picker (section 34) also uses it.
+- `GET /progress` and the weakest topics in `GET /subjects/{id}` return `accuracy` instead of `mastery`.
+  The smoothed value isn't sent to the page at all, so it can't show up by accident.
+- Home cards, session reports and the note page already showed raw accuracy, so they didn't change.

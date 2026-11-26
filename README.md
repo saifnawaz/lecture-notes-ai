@@ -37,7 +37,7 @@ API docs are at http://127.0.0.1:8000/docs.
   - **PDFs**: the PDFs in this subject and **Upload PDF** (the subject is filled in for you)
   - **Quiz**: 10 questions mixed from all PDFs in the subject; weak topics come up more often
   - **Daily Revision**: this subject's flashcards that are due today
-  - **Progress**: a mastery bar per topic, lowest first
+  - **Progress**: an accuracy bar per topic, weakest first
 - **PDF page** with tabs **Notes | Quiz | Flashcards**, plus **Generate more MCQs**,
   **Generate more flashcards** (new items are added, repeats skipped) and **Delete PDF**.
 - A breadcrumb at the top (Home › Subject › PDF) takes you back up.
@@ -66,7 +66,7 @@ See `explanations.md` for how everything works.
 | POST   | `/notes/{id}/flashcards` | Add new flashcards (from the saved PDF, or the notes text) |
 | GET    | `/notes/{id}/cards` | All flashcards of one note |
 | POST   | `/attempts`   | Save one quiz answer (`note_id`, `question_index`, `chosen`) |
-| GET    | `/progress`   | Mastery per subtopic, lowest first (optional `?subject=`) |
+| GET    | `/progress`   | Accuracy per subtopic, weakest first (optional `?subject=`) |
 | GET    | `/cards/due`  | Flashcards due today or earlier (optional `?subject=`) |
 | POST   | `/cards/{id}/review` | Review one card (`quality` 0-5; the page sends 1 = Bhool gaya, 4 = Yaad tha) |
 
