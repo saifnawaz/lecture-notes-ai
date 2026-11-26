@@ -34,6 +34,9 @@ Read the attached study material and return ONLY valid JSON in this exact shape:
       "subtopic": "which subtopic this tests",
       "explanation": "one line on why the answer is correct"
     }
+  ],
+  "flashcards": [
+    {"front": "short question or term", "back": "short answer", "subtopic": "which subtopic"}
   ]
 }
 
@@ -41,6 +44,26 @@ Rules:
 - 8 to 12 notes, simple English, keep formulas.
 - Exactly 5 MCQs. "answer" is the index (0-3) of the correct option.
 - Questions must test understanding, not just copying lines.
+- 8 to 10 flashcards. Front: one clear question or term. Back: a short answer (1-2 sentences).
+  Cover the key definitions, formulas and ideas.
+"""
+
+FLASHCARD_PROMPT = """You are a study assistant for a university student.
+Below are study notes on "{topic}" ({subject}).
+Make 8 to 10 flashcards from them and return ONLY valid JSON in this exact shape:
+
+{{
+  "flashcards": [
+    {{"front": "short question or term", "back": "short answer", "subtopic": "which subtopic"}}
+  ]
+}}
+
+Rules:
+- Front: one clear question or term. Back: a short answer (1-2 sentences). Keep formulas.
+- Cover the key definitions, formulas and ideas.
+
+Notes:
+{notes}
 """
 
 
@@ -80,30 +103,25 @@ def list_models(client):
     ]
 
 
-def ask(client, model, uploaded):
+def ask(client, model, contents):
     response = client.models.generate_content(
         model=model,
-        contents=[uploaded, PROMPT],
+        contents=contents,
         config=types.GenerateContentConfig(response_mime_type="application/json"),
     )
     return json.loads(response.text)
 
 
-def generate(client, file_path):
-    """Upload file_path to Gemini and return the notes/MCQs dict.
+def ask_with_fallback(client, contents):
+    """Try the main model, then each fallback, with retries.
 
-    Tries the main model, then each fallback, with retries.
     Raises GenerationError if everything fails.
     """
-    file_path = Path(file_path)
-    print(f"Uploading {file_path.name}...")
-    uploaded = client.files.upload(file=file_path)
-
     for model in [MODEL] + FALLBACKS:
         for attempt in range(1, RETRIES + 1):
             try:
                 print(f"Asking {model} (try {attempt})...")
-                return ask(client, model, uploaded)
+                return ask(client, model, contents)
             except errors.ServerError:
                 print("  Server busy.")
                 time.sleep(attempt * 3)
@@ -114,3 +132,22 @@ def generate(client, file_path):
                 print("  Bad JSON from model, retrying.")
 
     raise GenerationError("All models failed. Try again later.")
+
+
+def generate(client, file_path):
+    """Upload file_path to Gemini and return the notes/MCQs/flashcards dict."""
+    file_path = Path(file_path)
+    print(f"Uploading {file_path.name}...")
+    uploaded = client.files.upload(file=file_path)
+    return ask_with_fallback(client, [uploaded, PROMPT])
+
+
+def generate_flashcards(client, subject, topic, notes):
+    """Make flashcards from already-saved notes text (no PDF needed)."""
+    prompt = FLASHCARD_PROMPT.format(
+        subject=subject or "unknown subject",
+        topic=topic or "untitled",
+        notes="\n".join(f"- {n}" for n in notes),
+    )
+    data = ask_with_fallback(client, [prompt])
+    return data.get("flashcards", []) if isinstance(data, dict) else []
