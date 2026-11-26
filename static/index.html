@@ -18,6 +18,7 @@
       <div class="nav-buttons">
         <button id="new-btn" class="secondary">+ New upload</button>
         <button id="weak-btn" class="secondary">Weak topics</button>
+        <button id="review-btn" class="secondary">Review <span id="due-badge" class="badge" hidden></span></button>
       </div>
       <ul id="notes-list"></ul>
     </aside>
@@ -46,6 +47,10 @@
           <p id="note-date" class="muted"></p>
           <p id="note-accuracy" class="accuracy" hidden></p>
           <ul id="note-notes" class="notes"></ul>
+          <div class="flashcards-line">
+            <span id="card-info" class="muted"></span>
+            <button id="gen-cards-btn" class="secondary" hidden>Generate flashcards</button>
+          </div>
         </div>
 
         <div class="card">
@@ -75,6 +80,36 @@
           <span class="dot strong"></span> strong
         </p>
         <div id="weak-list"></div>
+      </section>
+
+      <!-- Flashcard review -->
+      <section id="review-view" class="card" hidden>
+        <div class="quiz-head">
+          <h2>Review</h2>
+          <label class="inline">Subject
+            <select id="review-subject">
+              <option value="">All subjects</option>
+            </select>
+          </label>
+        </div>
+        <p id="review-count" class="muted"></p>
+        <p id="review-feedback" class="feedback" hidden></p>
+
+        <div id="flashcard" class="flashcard" hidden>
+          <p id="fc-meta" class="subject"></p>
+          <p id="fc-front" class="fc-front"></p>
+          <p id="fc-back" class="fc-back" hidden></p>
+          <p id="fc-hint" class="muted">Click the card (or press Space) to show the answer.</p>
+        </div>
+
+        <div id="review-buttons" class="review-buttons" hidden>
+          <button data-quality="1" class="again">Again <small>1</small></button>
+          <button data-quality="3" class="hard">Hard <small>2</small></button>
+          <button data-quality="4" class="good">Good <small>3</small></button>
+          <button data-quality="5" class="easy">Easy <small>4</small></button>
+        </div>
+
+        <p id="review-done" class="done" hidden>All done! No cards due right now.</p>
       </section>
     </main>
   </div>
