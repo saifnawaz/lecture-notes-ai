@@ -187,7 +187,13 @@ async function showSubject(id, tab, extra) {
   const body = el("div", { class: "tab-body" });
   app.replaceChildren(el("h2", { class: "page-title" }, subject.name), tabs(items, tab), body);
 
-  const renderers = { overview: renderOverview };
+  const renderers = {
+    overview: renderOverview,
+    pdfs: renderPdfs,
+    quiz: renderSubjectQuiz,
+    revision: renderRevisionTab,
+    progress: renderProgress,
+  };
   await (renderers[tab] || renderOverview)(body, subject, extra);
 }
 
@@ -210,6 +216,292 @@ function renderOverview(body, s) {
             "Practice"))))
       : el("p", { class: "muted" }, "Take a quiz to find your weak topics."),
   );
+}
+
+// ---------- Subject: PDFs tab ----------
+
+async function renderPdfs(body, s) {
+  const notes = await api(`/notes?subject=${encodeURIComponent(s.name)}`);
+  body.append(
+    uploadForm(s),
+    notes.length
+      ? el("div", { class: "pdf-list" }, notes.map((n) => el("a", { class: "pdf-row", href: `#/s/${s.id}/pdf/${n.id}` },
+          el("div", {},
+            el("b", {}, n.topic || "Untitled"),
+            el("small", {}, [n.filename, new Date(n.created_at).toLocaleDateString()].filter(Boolean).join(" · "))),
+          el("small", { class: "muted" }, `${plural(n.mcq_count, "MCQ")} · ${plural(n.card_count, "card")}`))))
+      : el("p", { class: "muted" }, "No PDFs yet. Upload one to get notes, a quiz and flashcards."),
+  );
+}
+
+// Upload a PDF into this subject. If the same file is already here, ask first.
+function uploadForm(s) {
+  const file = el("input", { type: "file", accept: ".pdf,application/pdf", required: true });
+  const button = el("button", { type: "submit" }, "Upload PDF");
+  const status = el("p", { class: "status" });
+
+  async function send(force) {
+    const form = new FormData();
+    form.append("file", file.files[0]);
+    form.append("subject", s.name); // subject is set automatically
+    if (force) form.append("force", "true");
+    const res = await fetch("/generate", { method: "POST", body: form });
+    if (res.status === 409) {
+      const data = await res.json();
+      if (!confirm(`${data.detail}\n\nGenerate notes from it again anyway?`)) return null;
+      return send(true);
+    }
+    return readJson(res);
+  }
+
+  const form = el("form", { class: "upload-row" }, file, button);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    button.disabled = true;
+    status.className = "status";
+    status.textContent = "Generating... this can take a minute.";
+    try {
+      const note = await send(false);
+      if (note) location.hash = `#/s/${s.id}/pdf/${note.id}`;
+      else status.textContent = "";
+    } catch (err) {
+      status.className = "status error";
+      // A network failure (server down) gives a TypeError with a vague message.
+      status.textContent = err instanceof TypeError ? "Could not reach the server." : err.message;
+    } finally {
+      button.disabled = false;
+    }
+  });
+  return el("div", { class: "upload-box" }, form, status);
+}
+
+// ---------- Subject: Quiz tab ----------
+
+const QUIZ_SIZE = 10;
+
+// Mixed quiz from all PDFs. With a topic (from a "Practice" button) it starts right away.
+async function renderSubjectQuiz(body, s, topic) {
+  async function start() {
+    let url = `/subjects/${s.id}/quiz?n=${QUIZ_SIZE}`;
+    if (topic) url += `&subtopic=${encodeURIComponent(topic)}`;
+    const questions = await api(url);
+    runQuiz(body, questions, { title: topic ? `Practice: ${topic}` : "Mixed quiz", backHref: `#/s/${s.id}` });
+  }
+  if (topic) return start();
+  body.append(el("div", { class: "start-box" },
+    el("p", {}, `${QUIZ_SIZE} questions mixed from all PDFs in ${s.name}. Weak topics come up more often.`),
+    el("button", { onclick: start }, "Start quiz")));
+}
+
+// ---------- Quiz session (used by the subject quiz and the PDF quiz) ----------
+
+// questions: [{question, options, answer, explanation, subtopic, note_id, question_index}]
+// opts: {title, backHref, practice}. Practice rounds don't save attempts.
+function runQuiz(container, questions, opts) {
+  if (!questions.length) {
+    container.replaceChildren(el("p", { class: "muted" }, "No questions yet. Upload a PDF or generate more MCQs."));
+    return;
+  }
+  const results = []; // {q, chosen, correct}
+  let index = 0;
+
+  function show() {
+    if (index >= questions.length) return finishQuiz(container, results, opts);
+    const q = questions[index];
+    let answered = false;
+
+    const explanation = el("p", { class: "explanation", hidden: true });
+    const next = el("button", { class: "next", hidden: true, onclick: () => { index++; show(); } },
+      index === questions.length - 1 ? "See results" : "Next");
+    const options = q.options.map((text, j) =>
+      el("button", { class: "option", onclick: () => choose(j) }, `${LETTERS[j]}) ${text}`));
+
+    function choose(j) {
+      if (answered) return;
+      answered = true;
+      const correct = j === q.answer;
+      options.forEach((b) => (b.disabled = true));
+      options[q.answer].classList.add("correct");
+      if (!correct) options[j].classList.add("wrong");
+      explanation.textContent = q.explanation || "";
+      explanation.hidden = !q.explanation;
+      next.hidden = false;
+      results.push({ q, chosen: j, correct });
+      if (!opts.practice) saveAttempt(q, j);
+    }
+
+    // Keys: 1-4 pick an option, Enter or Space goes to the next question.
+    keyHandler = (event) => {
+      const n = Number(event.key);
+      if (!answered && n >= 1 && n <= q.options.length) choose(n - 1);
+      else if (answered && (event.key === "Enter" || event.code === "Space")) {
+        event.preventDefault();
+        next.click();
+      }
+    };
+
+    container.replaceChildren(el("div", { class: "session" },
+      el("div", { class: "session-head" },
+        el("span", {}, opts.title || "Quiz"),
+        el("span", { class: "left-count" }, `${index + 1} / ${questions.length}`)),
+      el("p", { class: "question-text" }, q.question),
+      el("div", { class: "options" }, options),
+      explanation,
+      next));
+  }
+  show();
+}
+
+// The server decides if the answer was right, so we only send which option was clicked.
+async function saveAttempt(q, chosen) {
+  try {
+    await postJson("/attempts", { note_id: q.note_id, question_index: q.question_index, chosen });
+  } catch (err) {
+    console.error("Could not save attempt:", err);
+  }
+}
+
+function finishQuiz(container, results, opts) {
+  keyHandler = null;
+  const correct = results.filter((r) => r.correct).length;
+  container.replaceChildren(el("p", { class: "done" }, `Done: ${correct} of ${results.length} correct.`),
+    el("a", { class: "button secondary", href: opts.backHref }, "Back to subject"));
+}
+
+// ---------- Subject: Daily Revision tab ----------
+
+const FORGOT = 1;      // "Bhool gaya" -> SM-2 quality 1
+const REMEMBERED = 4;  // "Yaad tha"   -> SM-2 quality 4
+
+async function renderRevisionTab(body, s) {
+  const cards = await api(`/cards/due?subject=${encodeURIComponent(s.name)}`);
+  runRevision(body, cards, { backHref: `#/s/${s.id}` });
+}
+
+function days(n) {
+  return plural(n, "day");
+}
+
+// Flashcard session. "Bhool gaya" cards come back at the end of the same session.
+// Those repeats (and practice rounds) are practice only: SM-2 already scheduled the
+// card on its first answer, so they are not sent to the server again.
+function runRevision(container, cards, opts) {
+  if (!cards.length) {
+    container.replaceChildren(el("p", { class: "done" }, "All done for today."),
+      el("p", { class: "muted" }, "No cards are due in this subject."));
+    return;
+  }
+  const queue = cards.map((card) => ({ card, repeat: Boolean(opts.practice), nextDays: null }));
+  const firstAnswer = new Map(); // card id -> {card, remembered}; only the first showing counts
+  let flipped = false;
+  let busy = false;
+
+  const front = el("p", { class: "fc-front" });
+  const back = el("p", { class: "fc-back", hidden: true });
+  const hint = el("p", { class: "fc-hint" }, "tap to flip · Space");
+  const cardBox = el("div", { class: "flashcard", onclick: flip }, front, back, hint);
+  const buttons = el("div", { class: "review-buttons", hidden: true },
+    el("button", { class: "forgot", onclick: () => answer(FORGOT) }, "Bhool gaya ", el("small", {}, "1")),
+    el("button", { class: "remembered", onclick: () => answer(REMEMBERED) }, "Yaad tha ", el("small", {}, "2")));
+  const left = el("span", { class: "left-count" });
+  const feedback = el("p", { class: "feedback", hidden: true });
+
+  container.replaceChildren(el("div", { class: "session revision" },
+    el("div", { class: "session-head" }, el("span", {}, opts.practice ? "Practice mistakes" : "Daily Revision"), left),
+    cardBox, buttons, feedback));
+
+  function render() {
+    if (!queue.length) return finishRevision(container, [...firstAnswer.values()], opts);
+    left.textContent = `${queue.length} left`;
+    flipped = false;
+    front.textContent = queue[0].card.front;
+    back.textContent = queue[0].card.back;
+    back.hidden = true;
+    hint.hidden = false;
+    cardBox.classList.remove("flipped");
+    buttons.hidden = true;
+  }
+
+  function flip() {
+    if (flipped || !queue.length) return;
+    flipped = true;
+    back.hidden = false;
+    hint.hidden = true;
+    cardBox.classList.add("flipped");
+    buttons.hidden = false;
+  }
+
+  async function answer(quality) {
+    if (!flipped || busy) return;
+    busy = true;
+    const item = queue.shift();
+    try {
+      if (!item.repeat) {
+        const updated = await postJson(`/cards/${item.card.id}/review`, { quality });
+        item.nextDays = updated.interval_days;
+      }
+      if (!firstAnswer.has(item.card.id)) {
+        firstAnswer.set(item.card.id, { card: item.card, remembered: quality === REMEMBERED });
+      }
+      let text = item.nextDays === null ? "practice only" : `next time: in ${days(item.nextDays)}`;
+      if (quality === FORGOT) {
+        queue.push({ ...item, repeat: true }); // see it again at the end of this session
+        text += " · coming back in this session";
+      }
+      feedback.className = "feedback";
+      feedback.textContent = text;
+    } catch (err) {
+      queue.unshift(item); // keep the card so nothing is lost
+      feedback.className = "feedback error";
+      feedback.textContent = err.message;
+    }
+    feedback.hidden = false;
+    busy = false;
+    render();
+  }
+
+  // Keys: Space flips, 1 = Bhool gaya, 2 = Yaad tha.
+  keyHandler = (event) => {
+    if (event.code === "Space") {
+      event.preventDefault();
+      flip();
+    } else if (event.key === "1") answer(FORGOT);
+    else if (event.key === "2") answer(REMEMBERED);
+  };
+  render();
+}
+
+function finishRevision(container, results, opts) {
+  keyHandler = null;
+  const remembered = results.filter((r) => r.remembered).length;
+  container.replaceChildren(el("p", { class: "done" }, `Done: ${remembered} of ${results.length} remembered.`),
+    el("a", { class: "button secondary", href: opts.backHref }, "Back to subject"));
+}
+
+// ---------- Subject: Progress tab ----------
+
+// Bar color depends only on how full it is.
+function barColor(pct) {
+  if (pct < 25) return "low";
+  if (pct > 75) return "high";
+  return "mid";
+}
+
+async function renderProgress(body, s) {
+  const rows = await api(`/progress?subject=${encodeURIComponent(s.name)}`); // lowest mastery first
+  if (!rows.length) {
+    body.append(el("p", { class: "muted" }, "No quiz answers yet. Take a quiz to see your progress."));
+    return;
+  }
+  body.append(el("div", { class: "progress-list" }, rows.map((r) => {
+    const pct = Math.round(r.mastery * 100);
+    return el("div", { class: "progress-row" },
+      el("div", { class: "progress-name" }, r.subtopic || "General"),
+      el("div", { class: "bar-track" }, el("div", { class: `bar ${barColor(pct)}`, style: `width: ${pct}%` })),
+      el("div", { class: "progress-stats" },
+        el("b", {}, `${pct}%`),
+        el("small", {}, `${r.correct} of ${r.attempts} correct`)));
+  })));
 }
 
 // ---------- Start ----------

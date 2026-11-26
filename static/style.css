@@ -160,3 +160,104 @@ a.subject-card:hover { box-shadow: 0 4px 14px rgba(31, 36, 48, 0.1); transform: 
   main { padding: 1.25rem 1rem; }
   .stat-row { gap: 1.5rem; }
 }
+
+/* ---------- PDFs tab ---------- */
+.upload-box { margin-bottom: 1.5rem; }
+.upload-row { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+.status { margin: 0.5rem 0 0; color: var(--muted); font-size: 0.9rem; }
+.status.error { color: var(--wrong); }
+.pdf-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.pdf-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+  background: var(--card);
+  border-radius: 10px;
+  color: var(--text);
+}
+.pdf-row:hover { box-shadow: 0 2px 10px rgba(31, 36, 48, 0.08); }
+.pdf-row small { display: block; color: var(--muted); font-size: 0.8rem; }
+.pdf-row > small { white-space: nowrap; }
+
+/* ---------- Quiz and revision sessions ---------- */
+.start-box { text-align: center; padding: 2rem 0; }
+.start-box p { color: var(--muted); }
+.session { max-width: 640px; margin: 0 auto; }
+.session-head { display: flex; justify-content: space-between; color: var(--muted); font-weight: 600; font-size: 0.9rem; }
+.left-count { color: var(--muted); font-weight: 600; }
+.question-text { font-size: 1.2rem; font-weight: 600; margin: 1.25rem 0 1rem; }
+.options { display: flex; flex-direction: column; gap: 0.5rem; }
+.option {
+  width: 100%;
+  text-align: left;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  font-weight: 400;
+}
+.option:hover:not(:disabled) { border-color: var(--accent); }
+.option:disabled { cursor: default; opacity: 1; }
+.option.correct { border-color: var(--correct); background: var(--correct-bg); }
+.option.wrong { border-color: var(--wrong); background: var(--wrong-bg); }
+.explanation { color: var(--muted); font-size: 0.9rem; margin: 0.75rem 0 0; }
+.session .next { margin-top: 1rem; float: right; }
+.session::after { content: ""; display: block; clear: both; }
+
+.flashcard {
+  min-height: 300px;
+  margin: 1.25rem 0;
+  padding: 2rem;
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: 0 2px 12px rgba(31, 36, 48, 0.08);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+}
+.flashcard.flipped { cursor: default; }
+.fc-front { font-size: 1.5rem; font-weight: 600; margin: 0; }
+.fc-back {
+  margin: 1.25rem 0 0;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+  font-size: 1.15rem;
+  animation: fade-in 0.2s ease;
+}
+.fc-hint { margin: 1.5rem 0 0; color: var(--muted); font-size: 0.8rem; }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+.review-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.review-buttons button { padding: 0.85rem; font-size: 1.05rem; }
+.review-buttons small { opacity: 0.7; font-weight: 400; margin-left: 0.3rem; font-size: 0.8rem; }
+.review-buttons .forgot { background: var(--wrong); }
+.review-buttons .remembered { background: var(--correct); }
+.feedback { margin: 1rem 0 0; text-align: center; color: var(--muted); font-size: 0.9rem; }
+.feedback.error { color: var(--wrong); }
+.done { text-align: center; font-size: 1.2rem; font-weight: 600; color: var(--correct); margin: 2rem 0 1rem; }
+
+/* ---------- Progress tab ---------- */
+.progress-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1.2fr) 2fr 110px;
+  gap: 1.5rem;
+  align-items: center;
+  padding: 0.9rem 0;
+}
+.progress-name { font-weight: 600; }
+.progress-stats { text-align: right; }
+.progress-stats b { font-size: 1.05rem; }
+.progress-stats small { display: block; color: var(--muted); font-size: 0.8rem; }
+.bar-track { height: 10px; background: var(--soft); border-radius: 5px; overflow: hidden; }
+.bar { height: 100%; border-radius: 5px; }
+.bar.low { background: var(--wrong); }
+.bar.mid { background: var(--warn); }
+.bar.high { background: var(--correct); }
+
+@media (max-width: 760px) {
+  .progress-row { grid-template-columns: 1fr 90px; gap: 0.5rem 1rem; }
+  .progress-row .bar-track { grid-column: 1 / -1; grid-row: 2; }
+}
