@@ -40,16 +40,16 @@ API docs are at http://127.0.0.1:8000/docs.
 | GET    | `/cards/due`  | Flashcards due today or earlier (optional `?subject=`) |
 | POST   | `/cards/{id}/review` | Review one card (`quality`: 1 Again, 3 Hard, 4 Good, 5 Easy) |
 
-## Weak topics
+## Progress
 
-Every quiz answer is saved. The **Weak topics** page ranks subtopics by a smoothed
+Every quiz answer is saved. The **Progress** page ranks subtopics by a smoothed
 error rate, `(wrong + 1) / (attempts + 2)`, so one lucky or unlucky answer doesn't
 make a topic look perfect or hopeless. See `explanations.md` for details.
 
 ## Flashcards
 
 Each new note comes with 8-10 flashcards. For notes saved earlier, open the note and click
-**Generate flashcards**. The **Review** page (the badge shows how many are due) shows one card
+**Generate flashcards**. The **Daily Revision** page (the badge shows how many are due) shows one card
 at a time: click or press Space to flip, then rate it Again / Hard / Good / Easy (keys 1-4).
 Cards are scheduled with the SM-2 spaced repetition algorithm (`srs.py`), explained in `explanations.md`.
 

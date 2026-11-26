@@ -287,7 +287,7 @@ async function saveAttempt(questionIndex, chosen) {
   }
 }
 
-// ---------- Weak topics ----------
+// ---------- Progress page ----------
 
 // Same thresholds as the explanation: score is the smoothed error rate (0..1).
 function level(score) {
@@ -331,7 +331,7 @@ async function loadWeakness() {
   if (rows.length === 0) {
     const p = document.createElement("p");
     p.className = "muted";
-    p.textContent = "No quiz answers yet. Take a quiz to see your weak topics.";
+    p.textContent = "No quiz answers yet. Take a quiz to see your progress.";
     list.appendChild(p);
     return;
   }
@@ -368,7 +368,7 @@ async function loadWeakness() {
 $("subject-filter").addEventListener("change", loadWeakness);
 $("weak-btn").addEventListener("click", showWeak);
 
-// ---------- Flashcard review ----------
+// ---------- Daily Revision (flashcards) ----------
 
 let queue = [];       // due cards for this session
 let position = 0;     // index of the card being shown

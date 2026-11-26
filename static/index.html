@@ -17,8 +17,8 @@
       <h2>Saved notes</h2>
       <div class="nav-buttons">
         <button id="new-btn" class="secondary">+ New upload</button>
-        <button id="weak-btn" class="secondary">Weak topics</button>
-        <button id="review-btn" class="secondary">Review <span id="due-badge" class="badge" hidden></span></button>
+        <button id="weak-btn" class="secondary">Progress</button>
+        <button id="review-btn" class="secondary">Daily Revision <span id="due-badge" class="badge" hidden></span></button>
       </div>
       <ul id="notes-list"></ul>
     </aside>
@@ -69,10 +69,10 @@
         </div>
       </section>
 
-      <!-- Weak topics -->
+      <!-- Progress -->
       <section id="weak-view" class="card" hidden>
         <div class="quiz-head">
-          <h2>Weak topics</h2>
+          <h2>Progress</h2>
           <label class="inline">Subject
             <select id="subject-filter">
               <option value="">All subjects</option>
@@ -88,10 +88,10 @@
         <div id="weak-list"></div>
       </section>
 
-      <!-- Flashcard review -->
+      <!-- Daily Revision (flashcards) -->
       <section id="review-view" class="card" hidden>
         <div class="quiz-head">
-          <h2>Review</h2>
+          <h2>Daily Revision</h2>
           <label class="inline">Subject
             <select id="review-subject">
               <option value="">All subjects</option>
