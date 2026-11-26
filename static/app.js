@@ -131,8 +131,10 @@ async function showHome() {
           stat(s.due_today, "due today", s.due_today ? "highlight" : ""),
           stat(accuracyText(s.accuracy), "accuracy")))),
       newSubjectCard()),
-    subjects.length ? null : el("p", { class: "muted" }, "Create your first subject, then upload PDFs into it."),
   );
+  if (!subjects.length) {
+    app.append(el("p", { class: "muted" }, "Create your first subject, then upload PDFs into it."));
+  }
 }
 
 // "+ New subject" card that turns into a small form.
