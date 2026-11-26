@@ -71,6 +71,50 @@ class GenerationError(Exception):
     """Raised when no model could produce a result."""
 
 
+class BadResponse(ValueError):
+    """The model answered, but not in the shape we asked for."""
+
+
+def unwrap(data):
+    """Gemini sometimes wraps the object in a list: [ {...} ]. Take the dict out."""
+    if isinstance(data, list) and len(data) == 1 and isinstance(data[0], dict):
+        return data[0]
+    return data
+
+
+def check_list(data, key):
+    if not isinstance(data.get(key), list):
+        raise BadResponse(f'"{key}" missing or not a list')
+
+
+def validate_notes(data):
+    """Raise BadResponse unless data looks like the main PROMPT's JSON."""
+    if not isinstance(data, dict):
+        raise BadResponse(f"expected an object, got {type(data).__name__}")
+    if not isinstance(data.get("topic"), str):
+        raise BadResponse('"topic" missing or not text')
+    for key in ("notes", "mcqs", "flashcards"):
+        check_list(data, key)
+    for q in data["mcqs"]:
+        ok = (
+            isinstance(q, dict)
+            and isinstance(q.get("question"), str)
+            and isinstance(q.get("options"), list)
+            and len(q["options"]) >= 2
+            and isinstance(q.get("answer"), int)
+            and 0 <= q["answer"] < len(q["options"])
+        )
+        if not ok:
+            raise BadResponse("an MCQ is missing question/options/answer")
+
+
+def validate_flashcards(data):
+    """Raise BadResponse unless data looks like FLASHCARD_PROMPT's JSON."""
+    if not isinstance(data, dict):
+        raise BadResponse(f"expected an object, got {type(data).__name__}")
+    check_list(data, "flashcards")
+
+
 def shuffle_options(mcqs, rng=random):
     """Shuffle each question's options and move "answer" to the new index.
 
@@ -103,25 +147,28 @@ def list_models(client):
     ]
 
 
-def ask(client, model, contents):
+def ask(client, model, contents, validate):
     response = client.models.generate_content(
         model=model,
         contents=contents,
         config=types.GenerateContentConfig(response_mime_type="application/json"),
     )
-    return json.loads(response.text)
+    data = unwrap(json.loads(response.text))
+    validate(data)  # raises BadResponse if the shape is wrong
+    return data
 
 
-def ask_with_fallback(client, contents):
+def ask_with_fallback(client, contents, validate):
     """Try the main model, then each fallback, with retries.
 
+    A bad answer (broken JSON or wrong shape) is retried.
     Raises GenerationError if everything fails.
     """
     for model in [MODEL] + FALLBACKS:
         for attempt in range(1, RETRIES + 1):
             try:
                 print(f"Asking {model} (try {attempt})...")
-                return ask(client, model, contents)
+                return ask(client, model, contents, validate)
             except errors.ServerError:
                 print("  Server busy.")
                 time.sleep(attempt * 3)
@@ -130,8 +177,12 @@ def ask_with_fallback(client, contents):
                 break
             except json.JSONDecodeError:
                 print("  Bad JSON from model, retrying.")
+            except BadResponse as e:
+                print(f"  Unexpected answer shape ({e}), retrying.")
 
-    raise GenerationError("All models failed. Try again later.")
+    raise GenerationError(
+        "The AI couldn't produce usable notes for this file. Please try again in a minute."
+    )
 
 
 def generate(client, file_path):
@@ -139,7 +190,7 @@ def generate(client, file_path):
     file_path = Path(file_path)
     print(f"Uploading {file_path.name}...")
     uploaded = client.files.upload(file=file_path)
-    return ask_with_fallback(client, [uploaded, PROMPT])
+    return ask_with_fallback(client, [uploaded, PROMPT], validate_notes)
 
 
 def generate_flashcards(client, subject, topic, notes):
@@ -149,5 +200,4 @@ def generate_flashcards(client, subject, topic, notes):
         topic=topic or "untitled",
         notes="\n".join(f"- {n}" for n in notes),
     )
-    data = ask_with_fallback(client, [prompt])
-    return data.get("flashcards", []) if isinstance(data, dict) else []
+    return ask_with_fallback(client, [prompt], validate_flashcards)["flashcards"]
