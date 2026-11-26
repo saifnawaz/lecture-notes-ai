@@ -1,10 +1,30 @@
-// Frontend logic: talks to the FastAPI backend with fetch().
-// We always use textContent (not innerHTML) for AI text, so it can't inject HTML.
+// Frontend: a small single-page app. The part of the URL after "#" decides the page:
+//   #/                        home (subject cards)
+//   #/s/3                     subject 3, Overview tab
+//   #/s/3/quiz                subject 3, Quiz tab
+//   #/s/3/pdf/12/flashcards   PDF 12 inside subject 3, Flashcards tab
+// AI text is always inserted as text (never as HTML), so it can't inject anything.
 
-const $ = (id) => document.getElementById(id);
+const app = document.getElementById("app");
 const LETTERS = "ABCD";
 
-let currentNote = null;
+// ---------- Small helpers ----------
+
+// el("div", { class: "x", onclick: fn }, "text", childNode, [more, children])
+function el(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs)) {
+    if (value === null || value === undefined || value === false) continue;
+    if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+    else if (key === "class") node.className = value;
+    else node.setAttribute(key, value === true ? "" : value);
+  }
+  for (const child of children.flat(Infinity)) {
+    if (child === null || child === undefined || child === false) continue;
+    node.append(child instanceof Node ? child : String(child));
+  }
+  return node;
+}
 
 // Read a JSON response, or throw an Error with a readable message.
 // Works even if the server sent plain text (e.g. "Internal Server Error").
@@ -23,498 +43,174 @@ async function readJson(res) {
   return data;
 }
 
-// ---------- Views ----------
-
-// Show one section (upload / note / progress / review) and hide the others.
-function showView(name) {
-  for (const view of ["upload", "note", "progress", "review"]) {
-    $(`${view}-view`).hidden = view !== name;
-  }
+async function api(path, options) {
+  return readJson(await fetch(path, options));
 }
 
-function showUpload() {
-  currentNote = null;
-  showView("upload");
-  highlightActive(null);
-  loadSubjectOptions();
-}
-
-// ---------- Upload subject picker ----------
-
-const NEW_SUBJECT = "__new__";
-
-// Fill the dropdown: "Let the AI guess", existing subjects, "+ New subject...".
-async function loadSubjectOptions() {
-  const select = $("subject-select");
-  const selected = select.value;
-  const subjects = await (await fetch("/subjects")).json();
-
-  select.innerHTML = "";
-  const options = [["", "Let the AI guess"], ...subjects.map((s) => [s, s]), [NEW_SUBJECT, "+ New subject..."]];
-  for (const [value, label] of options) {
-    const opt = document.createElement("option");
-    opt.value = value;
-    opt.textContent = label;
-    select.appendChild(opt);
-  }
-  if ([...select.options].some((o) => o.value === selected)) select.value = selected;
-  toggleNewSubject();
-}
-
-function toggleNewSubject() {
-  const isNew = $("subject-select").value === NEW_SUBJECT;
-  $("new-subject-label").hidden = !isNew;
-  $("new-subject").required = isNew;
-  if (isNew) $("new-subject").focus();
-}
-
-// If the typed name matches an existing subject (any case), use the existing one.
-function chosenSubject() {
-  const value = $("subject-select").value;
-  if (value !== NEW_SUBJECT) return value;
-  const typed = $("new-subject").value.trim();
-  const match = [...$("subject-select").options].find(
-    (o) => o.value !== NEW_SUBJECT && o.value && o.value.toLowerCase() === typed.toLowerCase()
-  );
-  return match ? match.value : typed;
-}
-
-$("subject-select").addEventListener("change", toggleNewSubject);
-
-function showNote(note) {
-  currentNote = note;
-  showView("note");
-
-  $("note-subject").textContent = note.subject || "";
-  $("note-topic").textContent = note.topic || "Untitled";
-  $("note-date").textContent = new Date(note.created_at).toLocaleString();
-
-  const list = $("note-notes");
-  list.innerHTML = "";
-  for (const text of note.notes) {
-    const li = document.createElement("li");
-    li.textContent = text;
-    list.appendChild(li);
-  }
-
-  showAccuracy(note.accuracy);
-  showCardInfo(note.card_count);
-  renderQuiz(note.mcqs);
-  highlightActive(note.id);
-}
-
-// accuracy is {attempts, correct, accuracy} or null if never tried.
-function showAccuracy(acc) {
-  const el = $("note-accuracy");
-  el.hidden = !acc;
-  if (acc) {
-    el.textContent = `Your accuracy on this note: ${acc.accuracy}% (${acc.correct}/${acc.attempts} answers)`;
-  }
-}
-
-// Flashcard line on the note page: count, or a button for older notes without cards.
-function showCardInfo(count) {
-  $("card-info").textContent = count ? `${count} flashcards from this note` : "No flashcards yet.";
-  $("gen-cards-btn").hidden = count > 0;
-}
-
-$("gen-cards-btn").addEventListener("click", async () => {
-  const noteId = currentNote.id;
-  const button = $("gen-cards-btn");
-  button.disabled = true;
-  $("card-info").textContent = "Making flashcards...";
-  try {
-    const data = await readJson(await fetch(`/notes/${noteId}/flashcards`, { method: "POST" }));
-    if (currentNote && currentNote.id === noteId) showCardInfo(data.card_count);
-    loadDueCount();
-  } catch (err) {
-    $("card-info").textContent = err.message;
-  } finally {
-    button.disabled = false;
-  }
-});
-
-// ---------- Delete note ----------
-
-$("delete-btn").addEventListener("click", async () => {
-  if (!currentNote) return;
-  if (!confirm("Delete this note? Its quiz history and flashcards will also be deleted.")) return;
-
-  const button = $("delete-btn");
-  button.disabled = true;
-  try {
-    await readJson(await fetch(`/notes/${currentNote.id}`, { method: "DELETE" }));
-    showUpload(); // also refreshes the subject dropdown
-    loadNotesList();
-    loadDueCount(); // its flashcards are gone
-  } catch (err) {
-    alert(err.message);
-  } finally {
-    button.disabled = false;
-  }
-});
-
-// ---------- Saved notes sidebar ----------
-
-async function loadNotesList() {
-  const res = await fetch("/notes");
-  const notes = await res.json();
-  const ul = $("notes-list");
-  ul.innerHTML = "";
-
-  if (notes.length === 0) {
-    const li = document.createElement("li");
-    li.className = "s";
-    li.textContent = "No notes yet.";
-    ul.appendChild(li);
-    return;
-  }
-
-  for (const n of notes) {
-    const li = document.createElement("li");
-    li.dataset.id = n.id;
-
-    const title = document.createElement("div");
-    title.className = "t";
-    title.textContent = n.topic || "Untitled";
-
-    const sub = document.createElement("div");
-    sub.className = "s";
-    sub.textContent = `${n.subject || ""} · ${new Date(n.created_at).toLocaleDateString()}`;
-
-    li.append(title, sub);
-    li.addEventListener("click", () => openNote(n.id));
-    ul.appendChild(li);
-  }
-  if (currentNote) highlightActive(currentNote.id);
-}
-
-function highlightActive(id) {
-  for (const li of $("notes-list").children) {
-    li.classList.toggle("active", li.dataset.id == id);
-  }
-}
-
-async function openNote(id) {
-  const res = await fetch(`/notes/${id}`);
-  if (!res.ok) return alert("Could not load that note.");
-  showNote(await res.json());
-}
-
-// ---------- Upload ----------
-
-$("upload-form").addEventListener("submit", async (event) => {
-  event.preventDefault(); // stop the browser from reloading the page
-
-  const form = new FormData();
-  form.append("file", $("file").files[0]);
-  form.append("subject", chosenSubject());
-
-  const status = $("status");
-  const button = $("submit-btn");
-  status.className = "";
-  status.textContent = "Generating... this can take a minute.";
-  button.disabled = true;
-
-  try {
-    const res = await fetch("/generate", { method: "POST", body: form });
-    const data = await readJson(res);
-
-    status.textContent = "";
-    $("upload-form").reset();
-    showNote(data);
-    loadNotesList();
-    loadSubjectOptions();
-    loadDueCount();
-  } catch (err) {
-    status.className = "error";
-    // A network failure (server down) gives a TypeError with a vague message.
-    status.textContent = err instanceof TypeError ? "Could not reach the server." : err.message;
-  } finally {
-    button.disabled = false;
-  }
-});
-
-// ---------- Quiz ----------
-
-function renderQuiz(mcqs) {
-  const quiz = $("quiz");
-  quiz.innerHTML = "";
-  let answered = 0;
-  let score = 0;
-
-  const updateScore = () => {
-    $("score").textContent = `Score: ${score} / ${mcqs.length}`;
-    $("retry-btn").hidden = answered < mcqs.length;
-  };
-
-  mcqs.forEach((q, i) => {
-    const box = document.createElement("div");
-    box.className = "question";
-
-    const p = document.createElement("p");
-    p.textContent = `Q${i + 1}. ${q.question}`;
-    box.appendChild(p);
-
-    const buttons = q.options.map((option, j) => {
-      const btn = document.createElement("button");
-      btn.className = "option";
-      btn.textContent = `${LETTERS[j]}) ${option}`;
-      btn.addEventListener("click", () => {
-        // Lock this question, then color the answers.
-        buttons.forEach((b) => (b.disabled = true));
-        buttons[q.answer].classList.add("correct");
-        if (j === q.answer) {
-          score++;
-        } else {
-          btn.classList.add("wrong");
-        }
-        answered++;
-        saveAttempt(i, j);
-
-        const exp = document.createElement("p");
-        exp.className = "explanation";
-        exp.textContent = q.explanation || "";
-        box.appendChild(exp);
-
-        updateScore();
-      });
-      box.appendChild(btn);
-      return btn;
-    });
-
-    quiz.appendChild(box);
-  });
-
-  updateScore();
-}
-
-// Send one answered question to the backend. The server works out
-// whether it was correct, so we only send which option was clicked.
-async function saveAttempt(questionIndex, chosen) {
-  const noteId = currentNote.id;
-  try {
-    await fetch("/attempts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ note_id: noteId, question_index: questionIndex, chosen }),
-    });
-    // Refresh the accuracy line (only if the user is still on this note).
-    const note = await (await fetch(`/notes/${noteId}`)).json();
-    if (currentNote && currentNote.id === noteId) showAccuracy(note.accuracy);
-  } catch (err) {
-    console.error("Could not save attempt:", err);
-  }
-}
-
-// ---------- Progress page ----------
-
-// Bar color depends only on how full it is.
-function barColor(pct) {
-  if (pct < 25) return "low";
-  if (pct > 75) return "high";
-  return "mid";
-}
-
-async function showProgress() {
-  currentNote = null;
-  showView("progress");
-  highlightActive(null);
-  await fillSubjectFilter();
-  await loadProgress();
-}
-
-// Rebuild the dropdown from all subjects that have attempts, keeping the selection.
-async function fillSubjectFilter() {
-  const select = $("subject-filter");
-  const selected = select.value;
-  const rows = await (await fetch("/progress")).json();
-  const subjects = [...new Set(rows.map((r) => r.subject))].sort();
-
-  select.innerHTML = "";
-  for (const value of ["", ...subjects]) {
-    const opt = document.createElement("option");
-    opt.value = value;
-    opt.textContent = value || "All subjects";
-    select.appendChild(opt);
-  }
-  select.value = subjects.includes(selected) ? selected : "";
-}
-
-async function loadProgress() {
-  const subject = $("subject-filter").value;
-  const url = subject ? `/progress?subject=${encodeURIComponent(subject)}` : "/progress";
-  const rows = await (await fetch(url)).json(); // already sorted, lowest mastery first
-
-  const list = $("progress-list");
-  list.innerHTML = "";
-  if (rows.length === 0) {
-    const p = document.createElement("p");
-    p.className = "muted";
-    p.textContent = "No quiz answers yet. Take a quiz to see your progress.";
-    list.appendChild(p);
-    return;
-  }
-
-  for (const r of rows) {
-    const pct = Math.round(r.mastery * 100);
-
-    const row = document.createElement("div");
-    row.className = "progress-row";
-
-    const name = document.createElement("div");
-    name.className = "progress-name";
-    name.textContent = r.subtopic || "General";
-    const sub = document.createElement("small");
-    sub.textContent = r.subject || "";
-    name.appendChild(sub);
-
-    const track = document.createElement("div");
-    track.className = "bar-track";
-    const bar = document.createElement("div");
-    bar.className = `bar ${barColor(pct)}`;
-    bar.style.width = `${pct}%`;
-    track.appendChild(bar);
-
-    const stats = document.createElement("div");
-    stats.className = "progress-stats";
-    const big = document.createElement("b");
-    big.textContent = `${pct}%`;
-    const small = document.createElement("small");
-    small.textContent = `${r.correct} of ${r.attempts} correct`;
-    stats.append(big, small);
-
-    row.append(name, track, stats);
-    list.appendChild(row);
-  }
-}
-
-$("subject-filter").addEventListener("change", loadProgress);
-$("progress-btn").addEventListener("click", showProgress);
-
-// ---------- Daily Revision (flashcards) ----------
-
-const FORGOT = 1;      // "Bhool gaya" -> SM-2 quality 1
-const REMEMBERED = 4;  // "Yaad tha"   -> SM-2 quality 4
-
-// Session queue. Each item is {card, repeat, nextDays}.
-// repeat = true means a "Bhool gaya" card coming back at the end of the session.
-// Repeats are practice only: SM-2 already scheduled the card on the first answer,
-// so they are not sent to the server again.
-let queue = [];
-let flipped = false;
-let busy = false;
-
-// Due count in the nav.
-async function loadDueCount() {
-  const cards = await (await fetch("/cards/due")).json();
-  const badge = $("due-badge");
-  badge.textContent = cards.length;
-  badge.hidden = cards.length === 0;
-  return cards;
-}
-
-async function showReview() {
-  currentNote = null;
-  showView("review");
-  highlightActive(null);
-  document.activeElement.blur(); // so Space flips the card instead of re-clicking a button
-  $("review-feedback").hidden = true;
-
-  const cards = await loadDueCount();
-  queue = cards.map((card) => ({ card, repeat: false, nextDays: null }));
-  renderCard();
-}
-
-function renderCard() {
-  const left = queue.length;
-  $("review-count").textContent = left ? `${left} left` : "";
-  $("review-done").hidden = left > 0;
-  $("flashcard").hidden = left === 0;
-  $("review-buttons").hidden = true;
-  if (left === 0) return;
-
-  flipped = false;
-  $("fc-front").textContent = queue[0].card.front;
-  $("fc-back").textContent = queue[0].card.back;
-  $("fc-back").hidden = true;
-  $("fc-hint").hidden = false;
-  $("flashcard").classList.remove("flipped");
-}
-
-function flipCard() {
-  if (flipped || queue.length === 0) return;
-  flipped = true;
-  $("fc-back").hidden = false;
-  $("fc-hint").hidden = true;
-  $("flashcard").classList.add("flipped");
-  $("review-buttons").hidden = false;
-}
-
-function days(n) {
-  return `${n} day${n === 1 ? "" : "s"}`;
-}
-
-async function answerCard(quality) {
-  if (!flipped || busy) return;
-  busy = true;
-  const item = queue.shift();
-  const feedback = $("review-feedback");
-  feedback.className = "feedback";
-
-  try {
-    if (!item.repeat) {
-      const res = await fetch(`/cards/${item.card.id}/review`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ quality }),
-      });
-      item.nextDays = (await readJson(res)).interval_days;
-      loadDueCount();
-    }
-    let text = `next time: in ${days(item.nextDays)}`;
-    if (quality === FORGOT) {
-      queue.push({ ...item, repeat: true }); // see it again at the end of this session
-      text += " � coming back in this session";
-    }
-    feedback.textContent = text;
-  } catch (err) {
-    queue.unshift(item); // keep the card so nothing is lost
-    feedback.className = "feedback error";
-    feedback.textContent = err.message;
-  }
-  feedback.hidden = false;
-  busy = false;
-  renderCard();
-}
-
-$("flashcard").addEventListener("click", flipCard);
-for (const btn of $("review-buttons").querySelectorAll("button")) {
-  btn.addEventListener("click", () => {
-    btn.blur();
-    answerCard(Number(btn.dataset.quality));
+function postJson(path, body) {
+  return api(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
   });
 }
 
-// Keyboard: Space flips, 1 = Bhool gaya, 2 = Yaad tha.
+function plural(n, word) {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+
+// A big number with a small label under it.
+function stat(value, label, cls = "") {
+  return el("div", { class: `stat ${cls}` }, el("b", {}, value), el("small", {}, label));
+}
+
+function accuracyText(accuracy) {
+  return accuracy === null || accuracy === undefined ? "–" : `${accuracy}%`;
+}
+
+// Tab bar: items are [key, label, href].
+function tabs(items, active) {
+  return el("nav", { class: "tabs" },
+    items.map(([key, label, href]) => el("a", { href, class: key === active ? "active" : "" }, label)));
+}
+
+// Only one keyboard handler is active at a time (the current quiz or revision session).
+let keyHandler = null;
 document.addEventListener("keydown", (event) => {
-  if ($("review-view").hidden || ["INPUT", "SELECT", "TEXTAREA"].includes(event.target.tagName)) return;
-  if (event.code === "Space") {
-    event.preventDefault();
-    flipCard();
-  } else if (event.key === "1") {
-    answerCard(FORGOT);
-  } else if (event.key === "2") {
-    answerCard(REMEMBERED);
-  }
+  if (!keyHandler || ["INPUT", "SELECT", "TEXTAREA"].includes(event.target.tagName)) return;
+  keyHandler(event);
 });
 
-$("review-btn").addEventListener("click", showReview);
+// ---------- Breadcrumb: Home > Subject > PDF ----------
 
-$("retry-btn").addEventListener("click", () => renderQuiz(currentNote.mcqs));
-$("new-btn").addEventListener("click", showUpload);
+function setBreadcrumb(items) {
+  const crumbs = [{ label: "Home", href: "#/" }, ...items];
+  const nav = document.getElementById("breadcrumb");
+  nav.replaceChildren(...crumbs.flatMap((c, i) => {
+    const last = i === crumbs.length - 1;
+    const node = last ? el("span", { class: "current" }, c.label) : el("a", { href: c.href }, c.label);
+    return i === 0 ? [node] : [el("span", { class: "sep" }, "›"), node];
+  }));
+}
+
+// ---------- Router ----------
+
+async function route() {
+  keyHandler = null;
+  const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
+  try {
+    if (parts[0] === "s" && parts[2] === "pdf") {
+      await showPdf(Number(parts[1]), Number(parts[3]), parts[4] || "notes");
+    } else if (parts[0] === "s") {
+      await showSubject(Number(parts[1]), parts[2] || "overview", parts[3]);
+    } else {
+      await showHome();
+    }
+  } catch (err) {
+    setBreadcrumb([]);
+    app.replaceChildren(el("div", { class: "card" },
+      el("p", { class: "error" }, err.message),
+      el("a", { href: "#/" }, "Back to home")));
+  }
+}
+
+window.addEventListener("hashchange", route);
+
+// ---------- Home: subject cards ----------
+
+async function showHome() {
+  setBreadcrumb([]);
+  const subjects = await api("/subjects");
+  app.replaceChildren(
+    el("h2", { class: "page-title" }, "Subjects"),
+    el("div", { class: "subject-grid" },
+      subjects.map((s) => el("a", { class: "subject-card", href: `#/s/${s.id}` },
+        el("h3", {}, s.name),
+        el("div", { class: "stats" },
+          stat(s.pdf_count, s.pdf_count === 1 ? "PDF" : "PDFs"),
+          stat(s.due_today, "due today", s.due_today ? "highlight" : ""),
+          stat(accuracyText(s.accuracy), "accuracy")))),
+      newSubjectCard()),
+    subjects.length ? null : el("p", { class: "muted" }, "Create your first subject, then upload PDFs into it."),
+  );
+}
+
+// "+ New subject" card that turns into a small form.
+function newSubjectCard() {
+  const input = el("input", { type: "text", placeholder: "Subject name", maxlength: 100, required: true });
+  const error = el("p", { class: "error" });
+  const button = el("button", { class: "subject-card add" }, "+ New subject");
+  const form = el("form", { class: "subject-card new-subject", hidden: true },
+    input,
+    el("div", { class: "row" },
+      el("button", { type: "submit" }, "Create"),
+      el("button", { type: "button", class: "secondary", onclick: () => toggle(false) }, "Cancel")),
+    error);
+
+  function toggle(open) {
+    button.hidden = open;
+    form.hidden = !open;
+    if (open) input.focus();
+  }
+  button.addEventListener("click", () => toggle(true));
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      const subject = await postJson("/subjects", { name: input.value.trim() });
+      location.hash = `#/s/${subject.id}/pdfs`; // straight to uploading
+    } catch (err) {
+      error.textContent = err.message;
+    }
+  });
+  return [button, form];
+}
+
+// ---------- Subject page ----------
+
+const SUBJECT_TABS = [
+  ["overview", "Overview"],
+  ["pdfs", "PDFs"],
+  ["quiz", "Quiz"],
+  ["revision", "Daily Revision"],
+  ["progress", "Progress"],
+];
+
+async function showSubject(id, tab, extra) {
+  const subject = await api(`/subjects/${id}`);
+  setBreadcrumb([{ label: subject.name, href: `#/s/${id}` }]);
+
+  const items = SUBJECT_TABS.map(([key, label]) => [
+    key,
+    key === "revision" && subject.due_today ? `${label} (${subject.due_today})` : label,
+    `#/s/${id}/${key}`,
+  ]);
+  const body = el("div", { class: "tab-body" });
+  app.replaceChildren(el("h2", { class: "page-title" }, subject.name), tabs(items, tab), body);
+
+  const renderers = { overview: renderOverview };
+  await (renderers[tab] || renderOverview)(body, subject, extra);
+}
+
+function renderOverview(body, s) {
+  body.append(
+    el("div", { class: "stat-row" },
+      stat(accuracyText(s.accuracy), "quiz accuracy"),
+      stat(s.due_today, "cards due today", s.due_today ? "highlight" : ""),
+      stat(s.pdf_count, s.pdf_count === 1 ? "PDF" : "PDFs")),
+    s.due_today
+      ? el("a", { class: "button", href: `#/s/${s.id}/revision` }, `Start Daily Revision (${s.due_today})`)
+      : null,
+    el("h3", { class: "section-title" }, "Weakest topics"),
+    s.weakest.length
+      ? el("div", { class: "weak-list" }, s.weakest.map((t) => el("div", { class: "weak-item" },
+          el("div", {},
+            el("b", {}, t.subtopic),
+            el("small", {}, `${Math.round(t.mastery * 100)}% mastery · ${t.correct} of ${t.attempts} correct`)),
+          el("a", { class: "button secondary", href: `#/s/${s.id}/quiz/${encodeURIComponent(t.subtopic)}` },
+            "Practice"))))
+      : el("p", { class: "muted" }, "Take a quiz to find your weak topics."),
+  );
+}
 
 // ---------- Start ----------
-loadNotesList();
-loadSubjectOptions();
-loadDueCount();
+route();
