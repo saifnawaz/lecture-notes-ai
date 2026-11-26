@@ -2,6 +2,7 @@
 
 Used by both main.py (CLI) and app.py (web server).
 """
+import io
 import json
 import os
 import random
@@ -220,11 +221,29 @@ def ask_with_fallback(client, contents, validate):
     )
 
 
-def generate(client, file_path):
-    """Upload file_path to Gemini and return the notes/MCQs/flashcards dict."""
+def upload_file(client, file_path, content=None):
+    """Upload a file to Gemini: the given bytes if we have them, else read file_path."""
     file_path = Path(file_path)
-    print(f"Uploading {file_path.name}...")
-    uploaded = client.files.upload(file=file_path)
+    try:
+        if content is None:
+            print(f"Uploading {file_path.name}...")
+            return client.files.upload(file=file_path)
+        print(f"Uploading {file_path.name} ({len(content)} bytes)...")
+        return client.files.upload(
+            file=io.BytesIO(content),
+            config=types.UploadFileConfig(mime_type="application/pdf", display_name=file_path.name),
+        )
+    except errors.ClientError as e:
+        print(f"  Upload failed: {e}")
+        raise GenerationError(f"Couldn't upload the file to Gemini ({e.message or e.code}).") from e
+
+
+def generate(client, file_path, content=None):
+    """Upload the file to Gemini and return the notes/MCQs/flashcards dict.
+
+    content: the file's bytes, if already in memory (the web upload). Otherwise file_path is read.
+    """
+    uploaded = upload_file(client, file_path, content)
     return ask_with_fallback(client, [uploaded, PROMPT], validate_notes)
 
 
@@ -251,7 +270,7 @@ def ask_more(client, template, validate, subject, topic, notes, existing, pdf_pa
     if pdf_path and Path(pdf_path).exists():
         source = f"Use the attached study material on {about}."
         notes_block = ""
-        contents = [client.files.upload(file=Path(pdf_path))]
+        contents = [upload_file(client, pdf_path)]
     else:
         source = f"Use the study notes below on {about}."
         notes_block = "\nNotes:\n" + "\n".join(f"- {n}" for n in notes)

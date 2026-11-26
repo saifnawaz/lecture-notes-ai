@@ -25,7 +25,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "test.db"))
     monkeypatch.setattr(app_module, "UPLOAD_DIR", tmp_path / "uploads")
     monkeypatch.setattr(app_module, "make_client", lambda: None)
-    monkeypatch.setattr(app_module, "generate", lambda client, path: result())
+    monkeypatch.setattr(app_module, "generate", lambda client, path, content=None: result())
     with TestClient(app_module.app) as c:
         yield c
 
@@ -48,12 +48,50 @@ def test_upload_saves_pdf_and_hash(client):
 def test_generation_gets_the_saved_pdf(client, monkeypatch):
     seen = {}
 
-    def fake(client_, path):
+    def fake(client_, path, content=None):
         seen["bytes"] = Path(path).read_bytes()
+        seen["content"] = content
         return result()
     monkeypatch.setattr(app_module, "generate", fake)
     upload(client)
     assert seen["bytes"] == PDF
+    assert seen["content"] == PDF  # the same in-memory bytes go to Gemini
+
+
+# ---------- the bytes are read once and used for everything ----------
+
+REAL_PDF = b"%PDF-1.7" + bytes(range(256)) * 400 + b"%%EOF"  # ~100 KB, binary
+EMPTY_HASH = hashlib.sha256(b"").hexdigest()
+
+
+def test_saved_file_is_not_empty_and_hash_matches(client):
+    note = upload(client, content=REAL_PDF).json()
+    saved = Path(note["pdf_path"]).read_bytes()
+    assert len(saved) == len(REAL_PDF) > 0
+    assert hashlib.sha256(saved).hexdigest() == note["pdf_hash"] != EMPTY_HASH
+    assert Path(note["pdf_path"]).name == f"{note['pdf_hash']}.pdf"
+
+
+def test_empty_upload_is_400(client, monkeypatch, tmp_path):
+    called = []
+    monkeypatch.setattr(app_module, "generate", lambda *a: called.append(a))
+    r = upload(client, content=b"")
+    assert r.status_code == 400
+    assert r.json()["detail"] == "The uploaded file is empty"
+    assert called == []  # never sent to Gemini
+    assert not list((tmp_path / "uploads").glob("*.pdf"))
+
+
+def test_duplicate_check_uses_hash_of_contents(client, monkeypatch):
+    seen = {}
+    real_find = db.find_note_by_hash
+
+    def spy(subject, pdf_hash):
+        seen["hash"] = pdf_hash
+        return real_find(subject, pdf_hash)
+    monkeypatch.setattr(db, "find_note_by_hash", spy)
+    upload(client, content=REAL_PDF)
+    assert seen["hash"] == hashlib.sha256(REAL_PDF).hexdigest()
 
 
 def test_duplicate_in_same_subject_asks_first(client):
@@ -78,7 +116,7 @@ def test_same_pdf_in_other_subject_is_fine(client):
 
 
 def test_failed_generation_removes_pdf(client, monkeypatch, tmp_path):
-    def fail(client_, path):
+    def fail(client_, path, content=None):
         raise GenerationError("nope")
     monkeypatch.setattr(app_module, "generate", fail)
     assert upload(client).status_code == 502

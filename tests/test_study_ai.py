@@ -125,14 +125,14 @@ def upload(client):
 
 
 def test_generate_route_saves_good_result(client, monkeypatch):
-    monkeypatch.setattr(app_module, "generate", lambda c, path: good_result())
+    monkeypatch.setattr(app_module, "generate", lambda c, path, content=None: good_result())
     r = upload(client)
     assert r.status_code == 200
     assert r.json()["topic"] == "Sets"
 
 
 def test_generate_route_generation_error_is_502(client, monkeypatch):
-    def fail(c, path):
+    def fail(c, path, content=None):
         raise GenerationError("The AI couldn't produce usable notes.")
     monkeypatch.setattr(app_module, "generate", fail)
     r = upload(client)
@@ -141,7 +141,7 @@ def test_generate_route_generation_error_is_502(client, monkeypatch):
 
 
 def test_generate_route_unexpected_error_is_502(client, monkeypatch):
-    def crash(c, path):
+    def crash(c, path, content=None):
         raise AttributeError("'list' object has no attribute 'get'")
     monkeypatch.setattr(app_module, "generate", crash)
     r = upload(client)

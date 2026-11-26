@@ -49,7 +49,10 @@ def generate_notes(
     if not (file.filename or "").lower().endswith(".pdf"):
         raise HTTPException(400, "Please upload a PDF file.")
 
+    # Read the upload ONCE. These same bytes are hashed, saved and sent to Gemini.
     content = file.file.read()
+    if not content:
+        raise HTTPException(400, "The uploaded file is empty")
     if len(content) > MAX_UPLOAD_MB * 1024 * 1024:
         raise HTTPException(400, f"PDF is larger than {MAX_UPLOAD_MB} MB.")
 
@@ -68,8 +71,13 @@ def generate_notes(
     UPLOAD_DIR.mkdir(exist_ok=True)
     pdf_path = (UPLOAD_DIR / f"{pdf_hash}.pdf").as_posix()
     Path(pdf_path).write_bytes(content)
+    saved_size = Path(pdf_path).stat().st_size
+    if saved_size != len(content):
+        remove_pdf_if_unused(pdf_path)
+        log.error("saved %s is %d bytes, upload was %d", pdf_path, saved_size, len(content))
+        raise HTTPException(500, "The PDF couldn't be saved. Please try again.")
     try:
-        data = generate(make_client(), pdf_path)
+        data = generate(make_client(), pdf_path, content)
     except Exception as e:
         remove_pdf_if_unused(pdf_path)
         if isinstance(e, GenerationError):
