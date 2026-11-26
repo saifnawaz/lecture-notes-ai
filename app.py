@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import db
-from study_ai import GenerationError, generate, make_client
+from study_ai import GenerationError, generate, make_client, shuffle_options
 
 MAX_UPLOAD_MB = 20
 
@@ -49,6 +49,7 @@ def generate_notes(file: UploadFile = File(...), subject: str = Form("")):
     if subject.strip():
         data["subject"] = subject.strip()  # user's choice wins over Gemini's guess
 
+    data["mcqs"] = shuffle_options(data.get("mcqs", []))
     note_id = db.save_note(data)
     return db.get_note(note_id)
 

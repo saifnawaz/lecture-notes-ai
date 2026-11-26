@@ -4,6 +4,7 @@ Used by both main.py (CLI) and app.py (web server).
 """
 import json
 import os
+import random
 import time
 from pathlib import Path
 
@@ -45,6 +46,24 @@ Rules:
 
 class GenerationError(Exception):
     """Raised when no model could produce a result."""
+
+
+def shuffle_options(mcqs, rng=random):
+    """Shuffle each question's options and move "answer" to the new index.
+
+    Models tend to put the correct answer in the same slot (often A),
+    so we mix the options ourselves. Returns new dicts; the input is not changed.
+    """
+    shuffled = []
+    for q in mcqs:
+        order = list(range(len(q["options"])))
+        rng.shuffle(order)  # order[new_index] = old_index
+        shuffled.append({
+            **q,
+            "options": [q["options"][i] for i in order],
+            "answer": order.index(q["answer"]),
+        })
+    return shuffled
 
 
 def make_client():
