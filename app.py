@@ -7,13 +7,14 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 import db
 import srs
+from quiz import pick_questions
 from study_ai import (
     GenerationError, generate, generate_flashcards, generate_mcqs, make_client, shuffle_options,
 )
@@ -114,6 +115,22 @@ def get_subject(subject_id: int):
         raise HTTPException(404, "Subject not found.")
     subject["weakest"] = db.progress(subject["name"])[:3]
     return subject
+
+
+@app.get("/subjects/{subject_id}/quiz")
+def subject_quiz(subject_id: int, n: int = Query(10, ge=1, le=50), subtopic: str | None = None):
+    """Mixed MCQs from all PDFs in a subject; weak topics come up more often.
+
+    With ?subtopic=..., only that topic (used by the "Practice" buttons).
+    """
+    subject = db.get_subject(subject_id)
+    if subject is None:
+        raise HTTPException(404, "Subject not found.")
+    questions = db.subject_questions(subject["name"])
+    if subtopic:
+        questions = [q for q in questions if q["subtopic"].casefold() == subtopic.casefold()]
+    mastery = {r["subtopic"].casefold(): r["mastery"] for r in db.progress(subject["name"])}
+    return pick_questions(questions, mastery, n)
 
 
 @app.get("/notes")

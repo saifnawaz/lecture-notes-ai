@@ -244,6 +244,25 @@ def get_note(note_id):
     return note
 
 
+def subject_questions(subject):
+    """Every MCQ from every note in a subject, with where it came from."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT id, topic, mcqs FROM notes WHERE subject = ? COLLATE NOCASE ORDER BY id", (subject,)
+        ).fetchall()
+    questions = []
+    for row in rows:
+        for i, q in enumerate(json.loads(row["mcqs"])):
+            questions.append({
+                **q,
+                "note_id": row["id"],
+                "question_index": i,
+                "note_topic": row["topic"],
+                "subtopic": q.get("subtopic") or row["topic"],  # same rule as attempts
+            })
+    return questions
+
+
 def add_mcqs(note_id, new_mcqs):
     """Append MCQs to a note. Old questions keep their index, so saved attempts stay valid."""
     with connect() as conn:
