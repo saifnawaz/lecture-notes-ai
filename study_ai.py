@@ -8,6 +8,7 @@ import os
 import random
 import re
 import time
+from collections import Counter
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -349,6 +350,19 @@ def compact(text):
     return "\n".join(line for line in lines if line)
 
 
+PAGE_NUMBER = re.compile(r"^(page\s*)?\d+(\s*(of|/)\s*\d+)?$", re.IGNORECASE)
+
+
+def drop_headers(pages):
+    """Remove page headers/footers: lines found on at least half the pages (3 or more),
+    and page numbers like "Page 3 of 16". They'd be paid for once per page otherwise."""
+    page_lines = [compact(p).splitlines() for p in pages]
+    seen_on = Counter(line for lines in page_lines for line in set(lines))
+    limit = max(3, len(pages) / 2)
+    return ["\n".join(line for line in lines if seen_on[line] < limit and not PAGE_NUMBER.match(line))
+            for lines in page_lines]
+
+
 def extract_text(content):
     """The text of a PDF (bytes), done once at upload so later calls don't resend the file.
 
@@ -360,7 +374,7 @@ def extract_text(content):
     except Exception as e:
         print(f"  Couldn't extract text: {e}")
         return ""
-    text = compact("\n".join(pages))
+    text = compact("\n".join(drop_headers(pages)))
     if not pages or len(text) < MIN_CHARS_PER_PAGE * len(pages):
         print(f"  Only {len(text)} characters of text in {len(pages)} pages: will send the PDF.")
         return ""

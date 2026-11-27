@@ -155,3 +155,12 @@ def test_old_note_gets_text_from_saved_pdf_once(client, monkeypatch, tmp_path):
     client.post(f"/notes/{nid}/flashcards")
     assert "unordered collection" in recorder.contents[-1] and client.fake.uploads == 0
     assert "unordered collection" in db.get_note(nid)["source_text"]  # stored for next time
+
+
+def test_page_headers_and_numbers_are_dropped():
+    pages = ["Course X\nPage 1 of 3\nalpha", "Course X\n2\nbeta", "Course X\n3 / 3\ngamma"]
+    assert study_ai.drop_headers(pages) == ["alpha", "beta", "gamma"]
+
+
+def test_short_pdfs_keep_repeated_lines():
+    assert study_ai.drop_headers(["Course X\nalpha", "Course X\nbeta"]) == ["Course X\nalpha", "Course X\nbeta"]
