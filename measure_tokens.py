@@ -50,7 +50,7 @@ def run(pdf):
 def main():
     if len(sys.argv) != 2 or not Path(sys.argv[1]).is_file():
         sys.exit("Usage: python measure_tokens.py lecture.pdf")
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:  # Windows keeps the db open
         db.DB_PATH = str(Path(tmp) / "measure.db")
         app_module.UPLOAD_DIR = Path(tmp) / "uploads"
         rows = {r["feature"]: r for r in run(Path(sys.argv[1]))}
