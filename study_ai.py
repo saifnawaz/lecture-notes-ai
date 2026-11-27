@@ -98,7 +98,7 @@ Rules:
 {notes}"""
 
 EXPLAIN_PROMPT = """You are a patient tutor for a university student.
-Explain the topic "{subtopic}" from {subject}, using the study notes below as context.
+Explain the topic "{subtopic}" from {subject}, using the study material below as context.
 Write in clear, simple English: short sentences, everyday words, explain every technical term.
 Return ONLY valid JSON in this exact shape:
 
@@ -112,12 +112,10 @@ Rules:
 - 2 to 4 short paragraphs.
 - One worked example, solved step by step.
 - Exactly 3 key points.
-
-Notes:
 {notes}"""
 
 PRACTICE_PROMPT = """You are a study assistant for a university student who is weak in some topics.
-Using the study notes below, make {total} NEW multiple-choice questions, this many per topic:
+Using the study material below, make {total} NEW multiple-choice questions, this many per topic:
 {plan}
 
 Return ONLY valid JSON in this exact shape:
@@ -139,8 +137,6 @@ Rules:
 - Questions must test understanding, not just copying lines.
 - Do NOT repeat or rephrase any of these existing questions:
 {existing}
-
-Notes:
 {notes}"""
 
 WHY_PROMPT = """A university student answered this multiple-choice question wrong.
@@ -466,13 +462,20 @@ def validate_why(data):
         raise BadResponse('"why" missing or empty')
 
 
-def notes_text(notes):
-    return "\n".join(f"- {n}" for n in notes) or "- (no notes saved)"
+def context_text(notes, chunks=()):
+    """Note bullets, then the matching excerpts of the PDF text."""
+    text = "\nNotes:\n" + ("\n".join(f"- {n}" for n in notes) or "- (no notes saved)")
+    if chunks:
+        text += "\nFrom the lecture material:\n" + "\n---\n".join(chunks)
+    return text
 
 
-def explain_topic(client, subject, subtopic, notes):
-    """Simple explanation, one worked example and 3 key points for one subtopic."""
-    prompt = EXPLAIN_PROMPT.format(subject=subject, subtopic=subtopic, notes=notes_text(notes))
+def explain_topic(client, subject, subtopic, notes, chunks=()):
+    """Simple explanation, one worked example and 3 key points for one subtopic.
+
+    notes / chunks: only the note bullets and PDF text pieces about this subtopic.
+    """
+    prompt = EXPLAIN_PROMPT.format(subject=subject, subtopic=subtopic, notes=context_text(notes, chunks))
     data = ask_with_fallback(client, [prompt], validate_explanation, "explain")
     return {
         "explanation": data["explanation"],
@@ -481,7 +484,7 @@ def explain_topic(client, subject, subtopic, notes):
     }
 
 
-def generate_practice(client, subject, plan, notes, existing=()):
+def generate_practice(client, subject, plan, notes, existing=(), chunks=()):
     """New MCQs for weak subtopics. plan: [(subtopic, how_many)], weakest first.
 
     Questions whose subtopic isn't one of the planned ones are dropped;
@@ -498,7 +501,7 @@ def generate_practice(client, subject, plan, notes, existing=()):
         total=sum(n for _, n in plan),
         plan="\n".join(f"- {topic}: {n}" for topic, n in plan),
         existing="\n".join(f"- {e}" for e in existing) or "- (none yet)",
-        notes=notes_text(notes),
+        notes=context_text(notes, chunks),
     )
     data = ask_with_fallback(client, [prompt], validate, "practice")
     mcqs = [

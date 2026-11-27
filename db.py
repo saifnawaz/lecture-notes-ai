@@ -286,12 +286,13 @@ def get_note(note_id):
 
 
 def subject_notes(subject):
-    """All notes of a subject (id, topic, notes list), oldest first."""
+    """All notes of a subject (id, topic, notes list, source_text), oldest first."""
     with connect() as conn:
         rows = conn.execute(
-            "SELECT id, topic, notes FROM notes WHERE subject = ? COLLATE NOCASE ORDER BY id", (subject,)
+            "SELECT id, topic, notes, source_text FROM notes WHERE subject = ? COLLATE NOCASE ORDER BY id",
+            (subject,),
         ).fetchall()
-    return [{"id": r["id"], "topic": r["topic"], "notes": json.loads(r["notes"])} for r in rows]
+    return [{**dict(r), "notes": json.loads(r["notes"])} for r in rows]
 
 
 def subject_questions(subject):

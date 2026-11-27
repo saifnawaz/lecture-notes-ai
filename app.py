@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 import db
 import srs
 import study_ai
+from context import related_context
 from quiz import pick_questions, plan_practice
 from study_ai import (
     GenerationError, explain_topic, extract_text, generate, generate_flashcards, generate_mcqs,
@@ -171,11 +172,19 @@ def subject_or_404(subject_id):
     return subject
 
 
-def subject_note_bullets(subject_name):
-    notes = [n for note in db.subject_notes(subject_name) for n in note["notes"]]
-    if not notes:
+def topic_context(subject_name, topics):
+    """Only the note bullets and PDF text pieces about these topics (not the whole subject).
+
+    topics: [(subtopic, [its question stems])]. Returns (bullets, chunks).
+    """
+    notes = db.subject_notes(subject_name)
+    if not any(n["notes"] for n in notes):
         raise HTTPException(400, "This subject has no notes yet. Upload a PDF first.")
-    return notes
+    return related_context(notes, topics)
+
+
+def stems_about(questions, subtopic):
+    return [q["question"] for q in questions if q["subtopic"].casefold() == subtopic.casefold()]
 
 
 @app.post("/subjects/{subject_id}/topics/{subtopic:path}/explain")
@@ -192,7 +201,9 @@ def explain(subject_id: int, subtopic: str, regenerate: bool = False):
         saved = db.get_explanation(subject["name"], subtopic)
         if saved:
             return {"subtopic": subtopic, **saved, "cached": True}
-    data = call_ai("explain", explain_topic, subject["name"], subtopic, subject_note_bullets(subject["name"]))
+    questions = db.subject_questions(subject["name"])
+    bullets, chunks = topic_context(subject["name"], [(subtopic, stems_about(questions, subtopic))])
+    data = call_ai("explain", explain_topic, subject["name"], subtopic, bullets, chunks)
     db.save_explanation(subject["name"], subtopic, data)
     return {"subtopic": subtopic, **db.get_explanation(subject["name"], subtopic), "cached": False}
 
@@ -221,9 +232,9 @@ def practice(subject_id: int, n: int = Query(8, ge=5, le=10)):
     if not plan:
         raise HTTPException(400, "This subject has no questions yet. Upload a PDF first.")
     wanted = {topic.casefold() for topic, _ in plan}
-    existing = [q["question"] for q in questions if q["subtopic"].casefold() in wanted]
-    mcqs = call_ai("practice", generate_practice, subject["name"], plan,
-                   subject_note_bullets(subject["name"]), existing)
+    existing = [q["question"] for q in questions if q["subtopic"].casefold() in wanted]  # stems only
+    bullets, chunks = topic_context(subject["name"], [(t, stems_about(questions, t)) for t, _ in plan])
+    mcqs = call_ai("practice", generate_practice, subject["name"], plan, bullets, existing, chunks)
 
     # Which note each topic's new questions go to.
     home = {}
