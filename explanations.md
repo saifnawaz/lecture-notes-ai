@@ -509,7 +509,7 @@ An upload was once saved as `e3b0c442...b855.pdf`. That is the SHA-256 of zero b
 
 ## 44. Extract the PDF text once
 - On upload, `extract_text()` (pypdf) reads the text once and stores it in `notes.source_text`. Spaces, blank lines,
-  repeated page headers and page numbers are removed. Generate, generate more, explain and practice use this text.
+  repeated page headers and page numbers are removed. Generate more, explain and practice use this text.
 - If there are fewer than 100 characters per page (a scanned PDF) or pypdf fails, `source_text` is `""` and the PDF
   itself is sent, like before. Older notes get their text extracted from the saved PDF the first time it's needed.
 - Measured: this PDF's text costs about as many tokens as the PDF did (~8,700), because it is dense with symbols.
@@ -550,3 +550,10 @@ Average tokens per call, one real run of `measure_tokens.py` on the same 16-page
 
 A whole run went from about 45,400 to 22,900 tokens (−49%). Most of the drop is thinking (2,000-2,900 → 0 tokens per call)
 and the smaller text for generate more. Cached repeats of generate, explain and why_wrong now cost 0.
+
+## 49. First generate: text or the PDF itself
+- `read_pdf()` reads the PDF once: its text, pages, characters per page and whether any page has an embedded image.
+- `text_for_first_generate()` sends the **PDF** if it has embedded images (diagrams, picture slides) or under
+  500 characters of text per page on average, because extracted text would miss too much. Otherwise it sends the text.
+- The chosen path is printed: "First generate: sending the PDF, it has embedded images." or "...sending extracted text (1543 characters per page, no images)."
+- Either way the extracted text (if at least 100 characters per page) is stored, so later features still don't resend the PDF.
