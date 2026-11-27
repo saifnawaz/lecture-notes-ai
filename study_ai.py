@@ -25,131 +25,73 @@ RETRIES = 3
 MIN_CHARS_PER_PAGE = 100  # less than this on average = probably a scanned PDF: send the file instead
 MAX_TEXT_CHARS = 120_000  # about 30k tokens; longer material is cut
 
+LITE_MODEL = os.getenv("GEMINI_LITE_MODEL", "gemini-3.5-flash-lite")
+
+# Per feature: use the lite model first?, the most output tokens it may write (the JSON
+# with room to spare; a cut-off answer is retried), and how much the model may "think".
+# MINIMAL is the lowest level; a model that doesn't accept a level is asked without one.
+TASKS = {
+    "generate": {"lite": False, "max_tokens": 8192, "thinking": "LOW"},
+    "more_mcqs": {"lite": False, "max_tokens": 4096, "thinking": "LOW"},
+    "practice": {"lite": False, "max_tokens": 6144, "thinking": "LOW"},
+    "explain": {"lite": False, "max_tokens": 4096, "thinking": "LOW"},
+    "flashcards": {"lite": True, "max_tokens": 3072, "thinking": "MINIMAL"},
+    "why_wrong": {"lite": True, "max_tokens": 1024, "thinking": "MINIMAL"},
+}
+
 # Called after every Gemini answer as usage_hook(feature, model, usage_dict).
 # app.py points it at db.log_usage; the command-line tool leaves it empty.
 usage_hook = None
 
-PROMPT = """You are a study assistant for a university student.
-Read the attached study material and return ONLY valid JSON in this exact shape:
+# Prompts are kept short: each rule once, and one-line JSON shapes.
+MCQ = ('{"question": str, "options": [4 str], "answer": index 0-3 of the correct option, '
+       '"subtopic": str, "explanation": one line on why it is correct}')
+CARD = '{"front": question or term, "back": 1-2 sentence answer, "subtopic": str}'
 
-{
-  "subject": "the course or subject, e.g. Discrete Mathematics",
-  "topic": "short title of the material",
-  "notes": ["clear bullet point", "..."],
-  "mcqs": [
-    {
-      "question": "question text",
-      "options": ["A option", "B option", "C option", "D option"],
-      "answer": 0,
-      "subtopic": "which subtopic this tests",
-      "explanation": "one line on why the answer is correct"
-    }
-  ],
-  "flashcards": [
-    {"front": "short question or term", "back": "short answer", "subtopic": "which subtopic"}
-  ]
-}
 
-Rules:
-- 8 to 12 notes, simple English, keep formulas.
-- Exactly 5 MCQs. "answer" is the index (0-3) of the correct option.
-- Questions must test understanding, not just copying lines.
-- 8 to 10 flashcards. Front: one clear question or term. Back: a short answer (1-2 sentences).
-  Cover the key definitions, formulas and ideas.
-"""
+def lit(text):
+    """Escape { } so a JSON shape can sit inside a str.format() template."""
+    return text.replace("{", "{{").replace("}", "}}")
 
-FLASHCARD_PROMPT = """You are a study assistant for a university student.
-{source}
-Make 8 to 10 NEW flashcards and return ONLY valid JSON in this exact shape:
 
-{{
-  "flashcards": [
-    {{"front": "short question or term", "back": "short answer", "subtopic": "which subtopic"}}
-  ]
-}}
+PROMPT = f"""You are a study assistant for a university student. From the study material, return JSON:
+{{"subject": course name, "topic": short title, "notes": [8-12 bullets], "mcqs": [exactly 5 MCQ], "flashcards": [8-10 card]}}
+MCQ = {MCQ}
+card = {CARD}
+Simple English, keep formulas. Questions test understanding, not copied lines. Cards cover key definitions, formulas and ideas."""
 
-Rules:
-- Front: one clear question or term. Back: a short answer (1-2 sentences). Keep formulas.
-- Cover the key definitions, formulas and ideas.
-- Do NOT repeat or rephrase any of these existing flashcards:
+FLASHCARD_PROMPT = """{source}
+Return JSON {{"flashcards": [8-10 NEW card]}}, card = """ + lit(CARD) + """
+Cover key definitions, formulas and ideas; keep formulas. Don't repeat or rephrase these:
 {existing}
 {notes}"""
 
-MCQ_PROMPT = """You are a study assistant for a university student.
-{source}
-Make 5 NEW multiple-choice questions and return ONLY valid JSON in this exact shape:
-
-{{
-  "mcqs": [
-    {{
-      "question": "question text",
-      "options": ["A option", "B option", "C option", "D option"],
-      "answer": 0,
-      "subtopic": "which subtopic this tests",
-      "explanation": "one line on why the answer is correct"
-    }}
-  ]
-}}
-
-Rules:
-- "answer" is the index (0-3) of the correct option.
-- Questions must test understanding, not just copying lines.
-- Do NOT repeat or rephrase any of these existing questions:
+MCQ_PROMPT = """{source}
+Return JSON {{"mcqs": [5 NEW MCQ]}}, MCQ = """ + lit(MCQ) + """
+Test understanding, not copied lines. Don't repeat or rephrase these:
 {existing}
 {notes}"""
 
-EXPLAIN_PROMPT = """You are a patient tutor for a university student.
-Explain the topic "{subtopic}" from {subject}, using the study material below as context.
-Write in clear, simple English: short sentences, everyday words, explain every technical term.
-Return ONLY valid JSON in this exact shape:
-
-{{
-  "explanation": ["short paragraph", "..."],
-  "example": {{"problem": "a worked example question", "solution": "the solution, step by step"}},
-  "key_points": ["point to remember", "point to remember", "point to remember"]
-}}
-
-Rules:
-- 2 to 4 short paragraphs.
-- One worked example, solved step by step.
-- Exactly 3 key points.
+EXPLAIN_PROMPT = """Explain "{subtopic}" ({subject}) to a university student, using the material below.
+Clear, simple English: short sentences, everyday words, define every technical term.
+Return JSON {{"explanation": [2-4 short paragraphs], "example": {{"problem": str, "solution": step-by-step str}}, "key_points": [exactly 3 str]}}
 {notes}"""
 
-PRACTICE_PROMPT = """You are a study assistant for a university student who is weak in some topics.
-Using the study material below, make {total} NEW multiple-choice questions, this many per topic:
+PRACTICE_PROMPT = """Write {total} NEW MCQs for a university student who is weak in these topics (questions per topic):
 {plan}
-
-Return ONLY valid JSON in this exact shape:
-
-{{
-  "mcqs": [
-    {{
-      "question": "question text",
-      "options": ["A option", "B option", "C option", "D option"],
-      "answer": 0,
-      "subtopic": "one of the topics above, spelled exactly the same",
-      "explanation": "one line on why the answer is correct, in simple English"
-    }}
-  ]
-}}
-
-Rules:
-- "answer" is the index (0-3) of the correct option.
-- Questions must test understanding, not just copying lines.
-- Do NOT repeat or rephrase any of these existing questions:
+Return JSON {{"mcqs": [MCQ]}}, MCQ = """ + lit(MCQ) + """
+"subtopic" is one of the topics above, spelled the same. Simple English; test understanding.
+Don't repeat or rephrase these:
 {existing}
 {notes}"""
 
-WHY_PROMPT = """A university student answered this multiple-choice question wrong.
-
+WHY_PROMPT = """A student got this MCQ wrong.
 Question: {question}
-Options:
 {options}
 Student's choice: {chosen}
 Correct answer: {answer}
-
-In 3 to 4 short sentences of clear, simple English, explain why the student's choice is wrong
-and why the correct answer is right. Return ONLY valid JSON: {{"why": "your explanation"}}"""
+In 3-4 short sentences of clear, simple English, say why their choice is wrong and why the correct one is right.
+JSON: {{"why": str}}"""
 
 
 class GenerationError(Exception):
@@ -268,12 +210,30 @@ def log_usage(feature, model, response):
         print(f"  Couldn't log token usage: {e}")
 
 
+def config_for(feature, thinking=True):
+    """JSON output, plus the feature's output limit and thinking level from TASKS."""
+    task = TASKS.get(feature, {})
+    config = {"response_mime_type": "application/json", "max_output_tokens": task.get("max_tokens")}
+    if thinking and task.get("thinking"):
+        config["thinking_config"] = types.ThinkingConfig(thinking_level=task["thinking"])
+    return types.GenerateContentConfig(**config)
+
+
+def models_for(feature):
+    """Small tasks try the lite model first; every task can fall back to the others."""
+    models = ([LITE_MODEL] if TASKS.get(feature, {}).get("lite") else []) + [MODEL] + FALLBACKS
+    return list(dict.fromkeys(models))  # drop repeats, keep order
+
+
 def ask(client, model, contents, validate, feature="generate"):
-    response = client.models.generate_content(
-        model=model,
-        contents=contents,
-        config=types.GenerateContentConfig(response_mime_type="application/json"),
-    )
+    try:
+        response = client.models.generate_content(model=model, contents=contents, config=config_for(feature))
+    except errors.ClientError as e:
+        if "thinking" not in str(e.message or e.details or "").lower():
+            raise
+        print(f"  {model} doesn't accept the thinking setting, asking without it.")
+        response = client.models.generate_content(
+            model=model, contents=contents, config=config_for(feature, thinking=False))
     log_usage(feature, model, response)  # before checking: a bad answer still cost tokens
     data = unwrap(json.loads(response.text))
     validate(data)  # raises BadResponse if the shape is wrong
@@ -301,7 +261,7 @@ def ask_with_fallback(client, contents, validate, feature="generate"):
     A bad answer (broken JSON or wrong shape) is retried.
     A file error stops right away. Raises GenerationError if everything fails.
     """
-    for model in [MODEL] + FALLBACKS:
+    for model in models_for(feature):
         for attempt in range(1, RETRIES + 1):
             try:
                 print(f"Asking {model} (try {attempt})...")
