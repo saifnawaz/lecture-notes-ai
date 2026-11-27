@@ -460,3 +460,31 @@ An upload was once saved as `e3b0c442...b855.pdf`. That is the SHA-256 of zero b
 - A 404 can mean "model not found" **or** "file not found". If the message is about the file
   (file, document, mime, pdf, page), trying the next model won't help, so it stops with a clear error.
   Model errors still move on to the next fallback model.
+
+# Phase 4: AI tutor
+
+## 39. Explain a topic
+- `POST /subjects/{id}/topics/{topic}/explain` sends the subject's notes to Gemini and gets back short paragraphs,
+  one worked example and exactly 3 key points, in simple English (`EXPLAIN_PROMPT` in `study_ai.py`).
+- The result is saved in the `explanations` table (one row per subject + topic, any case), so the next click is instant.
+  **Regenerate** (`?regenerate=true`) asks again and replaces the saved row.
+- "Explain" buttons are on every Progress row and on the Overview's weakest topics; they open `#/s/{id}/explain/{topic}`.
+
+## 40. Targeted practice
+- `POST /subjects/{id}/practice` ranks topics by smoothed mastery (untried = 0.5), takes the 3 weakest and
+  `plan_practice()` in `quiz.py` splits the questions in proportion to `1 - mastery`: every topic gets at least one, the weakest the most.
+- The prompt lists the existing question stems of those topics so Gemini doesn't repeat them; repeats and off-topic answers are dropped anyway.
+- New questions are saved as normal MCQs with `"practice": true` on the note that already has most questions on that topic,
+  so answering them counts toward progress. The quiz shows an "AI practice" tag.
+
+## 41. Why was I wrong?
+- In the quiz report, each wrong answer has a **Why?** button. `POST /why` sends the question, all options, your choice
+  and the correct answer, and gets back 3-4 sentences (`WHY_PROMPT`).
+- Saved in the `why_wrong` table per (note, question, chosen option), so the same mistake never calls Gemini twice.
+  The rows are deleted with their note.
+
+## 42. Shared rules
+- All prompts live in `study_ai.py`; each answer is checked by a `validate_*` function, and a bad shape is retried like before.
+- `call_ai()` in `app.py` turns any Gemini failure into a 502 with a readable message; the page shows a loading text
+  and that message. Tests fake Gemini (`tests/test_tutor.py`), including the caches and Regenerate.
+- UI text is English: the flashcard buttons are now **Forgot** and **Remembered**.

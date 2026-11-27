@@ -58,6 +58,8 @@ See `explanations.md` for how everything works.
 | POST   | `/subjects`   | Create a subject (`name`); returns the existing one if the name is taken |
 | GET    | `/subjects/{id}` | Subject overview, including the 3 weakest topics |
 | GET    | `/subjects/{id}/quiz` | Mixed MCQs, weak topics more often (`?n=`, `?subtopic=`) |
+| POST   | `/subjects/{id}/topics/{topic}/explain` | AI explanation, worked example, 3 key points (saved; `?regenerate=true`) |
+| POST   | `/subjects/{id}/practice` | 5-10 new AI MCQs for the weakest topics (`?n=`, default 8) |
 | POST   | `/generate`   | Upload a PDF (`file`, `subject`, `force`); 409 if it's already in that subject |
 | GET    | `/notes`      | List PDFs/notes (optional `?subject=`) |
 | GET    | `/notes/{id}` | One note with your accuracy and card count |
@@ -66,6 +68,7 @@ See `explanations.md` for how everything works.
 | POST   | `/notes/{id}/flashcards` | Add new flashcards (from the saved PDF, or the notes text) |
 | GET    | `/notes/{id}/cards` | All flashcards of one note |
 | POST   | `/attempts`   | Save one quiz answer (`note_id`, `question_index`, `chosen`) |
+| POST   | `/why`        | Why a wrong answer is wrong (`note_id`, `question_index`, `chosen`; saved) |
 | GET    | `/progress`   | Accuracy per subtopic, weakest first (optional `?subject=`) |
 | GET    | `/cards/due`  | Flashcards due today or earlier (optional `?subject=`) |
 | POST   | `/cards/{id}/review` | Review one card (`quality` 0-5; the page sends 1 = Forgot, 4 = Remembered) |
