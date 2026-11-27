@@ -67,6 +67,30 @@ def init_db():
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS explanations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                subject TEXT COLLATE NOCASE,
+                subtopic TEXT COLLATE NOCASE,
+                data TEXT,  -- JSON: explanation, example, key_points
+                created_at TEXT,
+                UNIQUE (subject, subtopic)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS why_wrong (
+                note_id INTEGER REFERENCES notes(id),
+                question_index INTEGER,
+                chosen INTEGER,
+                text TEXT,
+                created_at TEXT,
+                PRIMARY KEY (note_id, question_index, chosen)
+            )
+            """
+        )
         migrate(conn)
 
 
@@ -175,7 +199,7 @@ def rename_subject(old, new):
         new = canonical_subject(new)
     changed = {}
     with connect() as conn:
-        for table in ("notes", "attempts", "cards"):
+        for table in ("notes", "attempts", "cards", "explanations"):
             cur = conn.execute(
                 f"UPDATE {table} SET subject = ? WHERE subject = ? COLLATE NOCASE", (new, old)
             )
@@ -244,6 +268,15 @@ def get_note(note_id):
     return note
 
 
+def subject_notes(subject):
+    """All notes of a subject (id, topic, notes list), oldest first."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT id, topic, notes FROM notes WHERE subject = ? COLLATE NOCASE ORDER BY id", (subject,)
+        ).fetchall()
+    return [{"id": r["id"], "topic": r["topic"], "notes": json.loads(r["notes"])} for r in rows]
+
+
 def subject_questions(subject):
     """Every MCQ from every note in a subject, with where it came from."""
     with connect() as conn:
@@ -303,6 +336,7 @@ def delete_note(note_id):
             return None
         conn.execute("DELETE FROM attempts WHERE note_id = ?", (note_id,))
         conn.execute("DELETE FROM cards WHERE note_id = ?", (note_id,))
+        conn.execute("DELETE FROM why_wrong WHERE note_id = ?", (note_id,))
         conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
         return dict(row)
 
@@ -433,4 +467,41 @@ def update_card(card_id, ease, interval_days, repetitions, due_date):
                SET ease = ?, interval_days = ?, repetitions = ?, due_date = ?, last_reviewed = ?
                WHERE id = ?""",
             (ease, interval_days, repetitions, due_date, now(), card_id),
+        )
+
+
+# ---------- AI tutor caches ----------
+
+def get_explanation(subject, subtopic):
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT data, created_at FROM explanations WHERE subject = ? AND subtopic = ?", (subject, subtopic)
+        ).fetchone()
+    return {**json.loads(row["data"]), "created_at": row["created_at"]} if row else None
+
+
+def save_explanation(subject, subtopic, data):
+    """Save (or replace, after "Regenerate") the explanation of one subtopic."""
+    with connect() as conn:
+        conn.execute(
+            """INSERT INTO explanations (subject, subtopic, data, created_at) VALUES (?, ?, ?, ?)
+               ON CONFLICT (subject, subtopic) DO UPDATE SET data = excluded.data, created_at = excluded.created_at""",
+            (subject, subtopic, json.dumps(data, ensure_ascii=False), now()),
+        )
+
+
+def get_why(note_id, question_index, chosen):
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT text FROM why_wrong WHERE note_id = ? AND question_index = ? AND chosen = ?",
+            (note_id, question_index, chosen),
+        ).fetchone()
+    return row["text"] if row else None
+
+
+def save_why(note_id, question_index, chosen, text):
+    with connect() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO why_wrong (note_id, question_index, chosen, text, created_at) VALUES (?, ?, ?, ?, ?)",
+            (note_id, question_index, chosen, text, now()),
         )
