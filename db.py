@@ -105,6 +105,16 @@ def init_db():
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ai_cache (
+                key TEXT PRIMARY KEY,  -- sha256 of feature + input
+                feature TEXT,
+                data TEXT,             -- the validated JSON answer
+                created_at TEXT
+            )
+            """
+        )
         migrate(conn)
 
 
@@ -561,3 +571,19 @@ def usage_summary():
     """
     with connect() as conn:
         return [dict(r) for r in conn.execute(sql).fetchall()]
+
+
+# ---------- Answer cache ----------
+
+def cache_get(key):
+    with connect() as conn:
+        row = conn.execute("SELECT data FROM ai_cache WHERE key = ?", (key,)).fetchone()
+    return json.loads(row["data"]) if row else None
+
+
+def cache_put(key, feature, data):
+    with connect() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO ai_cache (key, feature, data, created_at) VALUES (?, ?, ?, ?)",
+            (key, feature, json.dumps(data, ensure_ascii=False), now()),
+        )

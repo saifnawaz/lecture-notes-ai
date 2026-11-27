@@ -2,6 +2,7 @@
 
 Used by both main.py (CLI) and app.py (web server).
 """
+import hashlib
 import io
 import json
 import os
@@ -42,6 +43,10 @@ TASKS = {
 # Called after every Gemini answer as usage_hook(feature, model, usage_dict).
 # app.py points it at db.log_usage; the command-line tool leaves it empty.
 usage_hook = None
+# Answer cache: cache_get(key) -> data or None, cache_put(key, feature, data). app.py points
+# them at the ai_cache table; without them nothing is cached.
+cache_get = None
+cache_put = None
 
 # Prompts are kept short: each rule once, and one-line JSON shapes.
 MCQ = ('{"question": str, "options": [4 str], "answer": index 0-3 of the correct option, '
@@ -287,6 +292,40 @@ def ask_with_fallback(client, contents, validate, feature="generate"):
     )
 
 
+def cache_key(feature, request):
+    """Same feature + same input = same key, so an identical request never calls Gemini twice."""
+    return hashlib.sha256(f"{feature}\n{request}".encode("utf-8")).hexdigest()
+
+
+def cached_ask(client, contents, validate, feature, request, fresh=False):
+    """ask_with_fallback, but answered from the cache when the same request was made before.
+
+    request: text that identifies the input (usually the prompt). fresh=True skips the lookup
+    (for "Regenerate") and stores the new answer.
+    """
+    if not fresh:
+        data = from_cache(feature, request, validate)
+        if data is not None:
+            return data
+    data = ask_with_fallback(client, contents, validate, feature)
+    if cache_put is not None:
+        cache_put(cache_key(feature, request), feature, data)
+    return data
+
+
+def from_cache(feature, request, validate):
+    """The cached answer to this request, or None."""
+    data = cache_get(cache_key(feature, request)) if cache_get is not None else None
+    if data is None:
+        return None
+    try:
+        validate(data)
+    except BadResponse:
+        return None  # an old answer in a shape we no longer accept: ask again
+    print(f"  {feature}: answered from cache, no tokens used.")
+    return data
+
+
 def upload_file(client, file_path, content=None):
     """Upload a file to Gemini: the given bytes if we have them, else read file_path."""
     file_path = Path(file_path)
@@ -352,9 +391,19 @@ def generate(client, file_path, content=None, text=""):
     otherwise the file is uploaded (content = its bytes if already in memory, else file_path is read).
     """
     if text:
-        return ask_with_fallback(client, [PROMPT + material(text)], validate_notes)
+        prompt = PROMPT + material(text)
+        return cached_ask(client, [prompt], validate_notes, "generate", prompt)
+    if content is None and Path(file_path).is_file():
+        content = Path(file_path).read_bytes()
+    if not content:
+        return ask_with_fallback(client, [upload_file(client, file_path), PROMPT], validate_notes)
+    # A scanned PDF: same bytes = same request, so the cache key uses the file's hash.
+    request = f"pdf:{hashlib.sha256(content).hexdigest()}\n{PROMPT}"
+    cached = from_cache("generate", request, validate_notes)
+    if cached is not None:
+        return cached  # not even uploaded
     uploaded = upload_file(client, file_path, content)
-    return ask_with_fallback(client, [uploaded, PROMPT], validate_notes)
+    return cached_ask(client, [uploaded, PROMPT], validate_notes, "generate", request, fresh=True)
 
 
 def normalize(text):
@@ -444,13 +493,13 @@ def context_text(notes, chunks=()):
     return text
 
 
-def explain_topic(client, subject, subtopic, notes, chunks=()):
+def explain_topic(client, subject, subtopic, notes, chunks=(), fresh=False):
     """Simple explanation, one worked example and 3 key points for one subtopic.
 
     notes / chunks: only the note bullets and PDF text pieces about this subtopic.
     """
     prompt = EXPLAIN_PROMPT.format(subject=subject, subtopic=subtopic, notes=context_text(notes, chunks))
-    data = ask_with_fallback(client, [prompt], validate_explanation, "explain")
+    data = cached_ask(client, [prompt], validate_explanation, "explain", prompt, fresh)
     return {
         "explanation": data["explanation"],
         "example": {"problem": data["example"]["problem"], "solution": data["example"]["solution"]},
@@ -495,4 +544,4 @@ def why_wrong(client, question, options, chosen, answer):
         chosen=f"{letter[chosen]}) {options[chosen]}",
         answer=f"{letter[answer]}) {options[answer]}",
     )
-    return ask_with_fallback(client, [prompt], validate_why, "why_wrong")["why"].strip()
+    return cached_ask(client, [prompt], validate_why, "why_wrong", prompt)["why"].strip()

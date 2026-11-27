@@ -27,6 +27,7 @@ UPLOAD_DIR = Path("uploads")  # saved PDFs, named by their SHA-256 hash
 GENERIC_ERROR = "Something went wrong while talking to the AI. Please try again."
 log = logging.getLogger(__name__)
 study_ai.usage_hook = db.log_usage  # every Gemini call's token counts go to the ai_usage table
+study_ai.cache_get, study_ai.cache_put = db.cache_get, db.cache_put  # identical requests: no new call
 
 
 @asynccontextmanager
@@ -203,7 +204,7 @@ def explain(subject_id: int, subtopic: str, regenerate: bool = False):
             return {"subtopic": subtopic, **saved, "cached": True}
     questions = db.subject_questions(subject["name"])
     bullets, chunks = topic_context(subject["name"], [(subtopic, stems_about(questions, subtopic))])
-    data = call_ai("explain", explain_topic, subject["name"], subtopic, bullets, chunks)
+    data = call_ai("explain", explain_topic, subject["name"], subtopic, bullets, chunks, fresh=regenerate)
     db.save_explanation(subject["name"], subtopic, data)
     return {"subtopic": subtopic, **db.get_explanation(subject["name"], subtopic), "cached": False}
 
