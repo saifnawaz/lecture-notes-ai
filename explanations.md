@@ -506,3 +506,47 @@ An upload was once saved as `e3b0c442...b855.pdf`. That is the SHA-256 of zero b
 | explain | 2,255 | 669 | 478 | 1,108 |
 | practice | 4,024 | 815 | 1,152 | 2,057 |
 | why_wrong | 1,075 | 182 | 83 | 810 |
+
+## 44. Extract the PDF text once
+- On upload, `extract_text()` (pypdf) reads the text once and stores it in `notes.source_text`. Spaces, blank lines,
+  repeated page headers and page numbers are removed. Generate, generate more, explain and practice use this text.
+- If there are fewer than 100 characters per page (a scanned PDF) or pypdf fails, `source_text` is `""` and the PDF
+  itself is sent, like before. Older notes get their text extracted from the saved PDF the first time it's needed.
+- Measured: this PDF's text costs about as many tokens as the PDF did (~8,700), because it is dense with symbols.
+  The win is that we can now send *part* of it (sections 45-46) and skip re-uploading the file.
+
+## 45. Send only what's needed
+- `context.py` splits the text into ~600-character chunks and scores chunks and note bullets by shared word stems
+  with the topic name (weight 3) and its question stems (weight 1). Explain and practice get only the best matches
+  (at least half the top score), within a fixed budget, instead of the whole subject.
+- Generate more MCQs/flashcards send at most 9,000 characters: the chunks the existing items cover *least*
+  (`least_covered`). New questions should come from new material anyway.
+- Duplicate avoidance sends only question stems / card fronts; Why? sends only the question, options, choice and answer.
+
+## 46. Right model and limits per task
+- `TASKS` in `study_ai.py` sets, per feature, the lite model first or not, `max_output_tokens`, and the thinking level.
+  Why? and flashcards use `GEMINI_LITE_MODEL` (default gemini-3.5-flash-lite) with `MINIMAL` thinking; the rest use `LOW`.
+- A model that rejects the thinking setting is asked again without it (same model). Bad JSON now logs Gemini's finish reason,
+  so a too-small `max_output_tokens` shows up as `MAX_TOKENS`.
+- Prompts were shortened: each rule once and one-line JSON shapes (`MCQ`, `CARD`) shared by all prompts.
+
+## 47. Cache by hash
+- `cached_ask()` keys the answer by `sha256(feature + input)` in the `ai_cache` table. Generate (the text, or the
+  scanned PDF's hash), explain and why_wrong use it, so an identical request never calls Gemini twice.
+  The `explanations` and `why_wrong` tables stay as they were; Regenerate skips the lookup and stores the new answer.
+- Generate more and practice aren't cached: their input lists every existing item, so a repeat means "give me different ones".
+
+## 48. Before / after
+Average tokens per call, one real run of `measure_tokens.py` on the same 16-page PDF, gemini-3.6-flash, empty cache:
+
+| feature | before | after | change |
+|---|---:|---:|---:|
+| generate | 13,767 | 10,582 | −23% |
+| more_mcqs | 12,594 | 4,281 | −66% |
+| flashcards | 11,666 | 4,068 | −65% |
+| explain | 2,255 | 1,356 | −40% |
+| practice | 4,024 | 2,421 | −40% |
+| why_wrong | 1,075 | 232 | −78% |
+
+A whole run went from about 45,400 to 22,900 tokens (−49%). Most of the drop is thinking (2,000-2,900 → 0 tokens per call)
+and the smaller text for generate more. Cached repeats of generate, explain and why_wrong now cost 0.
