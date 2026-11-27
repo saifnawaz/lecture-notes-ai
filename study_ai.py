@@ -240,7 +240,13 @@ def ask(client, model, contents, validate, feature="generate"):
         response = client.models.generate_content(
             model=model, contents=contents, config=config_for(feature, thinking=False))
     log_usage(feature, model, response)  # before checking: a bad answer still cost tokens
-    data = unwrap(json.loads(response.text))
+    try:
+        data = unwrap(json.loads(response.text))
+    except json.JSONDecodeError:
+        # MAX_TOKENS here means the answer was cut off: the feature's max_tokens is too small.
+        candidates = getattr(response, "candidates", None) or [None]
+        print(f"  Finish reason: {getattr(candidates[0], 'finish_reason', 'unknown')}")
+        raise
     validate(data)  # raises BadResponse if the shape is wrong
     return data
 
