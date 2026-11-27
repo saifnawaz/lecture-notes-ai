@@ -2,7 +2,7 @@ import json
 import sys
 from pathlib import Path
 
-from study_ai import GenerationError, extract_text, generate, list_models, make_client
+from study_ai import GenerationError, generate, list_models, make_client, read_pdf, text_for_first_generate
 
 OUTPUT_DIR = Path("output")
 
@@ -58,7 +58,7 @@ def main():
             sys.exit(f"File not found: {file_path}")
 
         content = file_path.read_bytes()
-        data = generate(client, file_path, content, extract_text(content))
+        data = generate(client, file_path, content, text_for_first_generate(read_pdf(content)))
     except GenerationError as e:
         sys.exit(str(e))
 

@@ -23,7 +23,8 @@ API_KEY = os.getenv("GEMINI_API_KEY")
 MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
 FALLBACKS = [m.strip() for m in os.getenv("GEMINI_FALLBACKS", "gemini-3.5-flash,gemini-3.5-flash-lite").split(",") if m.strip()]
 RETRIES = 3
-MIN_CHARS_PER_PAGE = 100  # less than this on average = probably a scanned PDF: send the file instead
+MIN_CHARS_PER_PAGE = 100  # less than this on average = probably a scanned PDF: no usable text at all
+TEXT_ONLY_CHARS_PER_PAGE = 500  # first generate sends text only from this much per page, and no images
 MAX_TEXT_CHARS = 120_000  # about 30k tokens; longer material is cut
 
 LITE_MODEL = os.getenv("GEMINI_LITE_MODEL", "gemini-3.5-flash-lite")
@@ -368,22 +369,55 @@ def drop_headers(pages):
             for lines in page_lines]
 
 
-def extract_text(content):
-    """The text of a PDF (bytes), done once at upload so later calls don't resend the file.
+def has_images(page):
+    """True if the page shows an embedded image. If pypdf can't tell, assume yes (send the PDF)."""
+    try:
+        return len(page.images) > 0
+    except Exception:
+        return True
 
-    Returns "" when pypdf can't read it or there is too little text (a scanned PDF);
-    the caller then sends the PDF itself.
+
+def read_pdf(content):
+    """Read a PDF (bytes) once at upload.
+
+    Returns {"text", "pages", "chars_per_page", "has_images"}. "text" is "" when pypdf can't
+    read the file or there is too little text to be useful (a scanned PDF).
     """
     try:
-        pages = [page.extract_text() or "" for page in PdfReader(io.BytesIO(content)).pages]
+        reader = PdfReader(io.BytesIO(content))
+        pages = [page.extract_text() or "" for page in reader.pages]
+        images = any(has_images(page) for page in reader.pages)
     except Exception as e:
-        print(f"  Couldn't extract text: {e}")
-        return ""
+        print(f"  Couldn't read the PDF: {e}")
+        return {"text": "", "pages": 0, "chars_per_page": 0, "has_images": False}
     text = compact("\n".join(drop_headers(pages)))
-    if not pages or len(text) < MIN_CHARS_PER_PAGE * len(pages):
-        print(f"  Only {len(text)} characters of text in {len(pages)} pages: will send the PDF.")
-        return ""
-    return text[:MAX_TEXT_CHARS]
+    chars_per_page = len(text) / len(pages) if pages else 0
+    if chars_per_page < MIN_CHARS_PER_PAGE:
+        text = ""
+    return {"text": text[:MAX_TEXT_CHARS], "pages": len(pages),
+            "chars_per_page": round(chars_per_page), "has_images": images}
+
+
+def extract_text(content):
+    """The PDF's usable text, or "" (then later calls send the PDF itself)."""
+    return read_pdf(content)["text"]
+
+
+def text_for_first_generate(info):
+    """What the first generate sends, from read_pdf()'s result: the text, or "" for the PDF itself.
+
+    The PDF is sent when it has embedded images (diagrams, picture slides) or less than
+    TEXT_ONLY_CHARS_PER_PAGE characters of text per page on average; extracted text would miss too much.
+    """
+    if info["has_images"]:
+        reason = "it has embedded images"
+    elif info["chars_per_page"] < TEXT_ONLY_CHARS_PER_PAGE:
+        reason = f"only {info['chars_per_page']} characters of text per page"
+    else:
+        print(f"  First generate: sending extracted text ({info['chars_per_page']} characters per page, no images).")
+        return info["text"]
+    print(f"  First generate: sending the PDF, {reason}.")
+    return ""
 
 
 def material(text):

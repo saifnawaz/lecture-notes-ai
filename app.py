@@ -19,7 +19,7 @@ from context import least_covered, related_context
 from quiz import pick_questions, plan_practice
 from study_ai import (
     GenerationError, explain_topic, extract_text, generate, generate_flashcards, generate_mcqs,
-    generate_practice, make_client, shuffle_options, why_wrong,
+    generate_practice, make_client, read_pdf, shuffle_options, text_for_first_generate, why_wrong,
 )
 
 MAX_UPLOAD_MB = 20
@@ -82,9 +82,10 @@ def generate_notes(
         remove_pdf_if_unused(pdf_path)
         log.error("saved %s is %d bytes, upload was %d", pdf_path, saved_size, len(content))
         raise HTTPException(500, "The PDF couldn't be saved. Please try again.")
-    text = extract_text(content)  # once; later calls use this instead of the PDF
+    info = read_pdf(content)  # once; later calls use info["text"] instead of the PDF
+    text = info["text"]
     try:
-        data = generate(make_client(), pdf_path, content, text)
+        data = generate(make_client(), pdf_path, content, text_for_first_generate(info))
     except Exception as e:
         remove_pdf_if_unused(pdf_path)
         if isinstance(e, GenerationError):
