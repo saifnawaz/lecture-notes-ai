@@ -3,6 +3,7 @@
 //   #/s/3                     subject 3, Overview tab
 //   #/s/3/quiz                subject 3, Quiz tab
 //   #/s/3/pdf/12/flashcards   PDF 12 inside subject 3, Flashcards tab
+//   #/s/3/explain/Sets        AI explanation of the topic "Sets" in subject 3
 // AI text is always inserted as text (never as HTML), so it can't inject anything.
 
 const app = document.getElementById("app");
@@ -195,11 +196,33 @@ async function showSubject(id, tab, extra) {
     quiz: renderSubjectQuiz,
     revision: renderRevisionTab,
     progress: renderProgress,
+    explain: renderExplain,
   };
   await (renderers[tab] || renderOverview)(body, subject, extra);
 }
 
+function explainHref(s, topic) {
+  return `#/s/${s.id}/explain/${encodeURIComponent(topic)}`;
+}
+
 function renderOverview(body, s) {
+  const status = el("p", { class: "status" });
+  const practiceButton = el("button", { class: "secondary" }, "Practice weak topics");
+  // Gemini writes new questions for the weakest topics; answers count toward progress.
+  practiceButton.addEventListener("click", async () => {
+    practiceButton.disabled = true;
+    status.className = "status";
+    status.textContent = "Writing new questions for your weak topics... this can take a minute.";
+    try {
+      const questions = await api(`/subjects/${s.id}/practice`, { method: "POST" });
+      runQuiz(body, questions, { title: "AI practice: weak topics", backHref: `#/s/${s.id}` });
+    } catch (err) {
+      status.className = "status error";
+      status.textContent = err.message;
+      practiceButton.disabled = false;
+    }
+  });
+
   body.append(
     el("div", { class: "stat-row" },
       stat(accuracyText(s.accuracy), "quiz accuracy"),
@@ -208,16 +231,66 @@ function renderOverview(body, s) {
     s.due_today
       ? el("a", { class: "button", href: `#/s/${s.id}/revision` }, `Start Daily Revision (${s.due_today})`)
       : null,
+    s.pdf_count ? el("div", { class: "practice-box" }, practiceButton, status) : null,
     el("h3", { class: "section-title" }, "Weakest topics"),
     s.weakest.length
       ? el("div", { class: "weak-list" }, s.weakest.map((t) => el("div", { class: "weak-item" },
           el("div", {},
             el("b", {}, t.subtopic),
             el("small", {}, `${t.accuracy}% accuracy · ${t.correct} of ${t.attempts} correct`)),
-          el("a", { class: "button secondary", href: `#/s/${s.id}/quiz/${encodeURIComponent(t.subtopic)}` },
-            "Practice"))))
+          el("div", { class: "row-actions" },
+            el("a", { class: "button secondary", href: explainHref(s, t.subtopic) }, "Explain"),
+            el("a", { class: "button secondary", href: `#/s/${s.id}/quiz/${encodeURIComponent(t.subtopic)}` },
+              "Practice")))))
       : el("p", { class: "muted" }, "Take a quiz to find your weak topics."),
   );
+}
+
+// ---------- Subject: Explain a topic ----------
+
+// The first visit asks Gemini; after that the saved explanation comes back instantly.
+// "Regenerate" asks again and replaces it.
+async function renderExplain(body, s, topic) {
+  const status = el("p", { class: "status" });
+  const content = el("div", { class: "explain" });
+  const regen = el("button", { class: "secondary", onclick: () => load(true) }, "Regenerate");
+
+  async function load(regenerate) {
+    regen.disabled = true;
+    status.className = "status";
+    status.textContent = regenerate
+      ? "Writing a new explanation..."
+      : "Asking the AI tutor... this can take a few seconds.";
+    try {
+      const path = `/subjects/${s.id}/topics/${encodeURIComponent(topic)}/explain`;
+      const e = await api(regenerate ? `${path}?regenerate=true` : path, { method: "POST" });
+      status.textContent = "";
+      content.replaceChildren(
+        ...e.explanation.map((text) => el("p", {}, text)),
+        el("h4", {}, "Worked example"),
+        el("div", { class: "worked" },
+          el("p", { class: "problem" }, e.example.problem),
+          el("p", { class: "solution" }, e.example.solution)),
+        el("h4", {}, "3 key points to remember"),
+        el("ul", { class: "key-points" }, e.key_points.map((text) => el("li", {}, text))),
+        el("p", { class: "muted" }, `Saved ${new Date(e.created_at).toLocaleString()}`));
+    } catch (err) {
+      status.className = "status error";
+      status.textContent = err.message;
+    } finally {
+      regen.disabled = false;
+    }
+  }
+
+  body.append(
+    el("div", { class: "explain-head" },
+      el("h3", {}, topic),
+      el("div", { class: "row-actions" },
+        regen,
+        el("a", { class: "button secondary", href: `#/s/${s.id}/quiz/${encodeURIComponent(topic)}` }, "Practice"))),
+    status,
+    content);
+  await load(false);
 }
 
 // ---------- Subject: PDFs tab ----------
@@ -344,7 +417,7 @@ function runQuiz(container, questions, opts) {
 
     container.replaceChildren(el("div", { class: "session" },
       el("div", { class: "session-head" },
-        el("span", {}, opts.title || "Quiz"),
+        el("span", {}, opts.title || "Quiz", q.practice ? el("span", { class: "tag" }, "AI practice") : null),
         el("span", { class: "left-count" }, `${index + 1} / ${questions.length}`)),
       el("p", { class: "question-text" }, q.question),
       el("div", { class: "options" }, options),
@@ -374,12 +447,35 @@ function finishQuiz(container, results, opts) {
     mistakes: wrong.map((r) => el("li", {},
       el("p", { class: "m-question" }, r.q.question),
       el("p", { class: "m-answer" }, "Correct: ", el("b", {}, r.q.options[r.q.answer])),
-      el("p", { class: "m-yours" }, `You chose: ${r.q.options[r.chosen]}`),
+      el("p", { class: "m-yours" }, `You chose: ${r.q.options[r.chosen]} `, whyButton(r.q, r.chosen)),
       r.q.explanation ? el("p", { class: "m-note" }, r.q.explanation) : null)),
     topics: wrong.map((r) => r.q.subtopic),
     onPractice: () => runQuiz(container, wrong.map((r) => r.q), { ...opts, practice: true, title: "Practice mistakes" }),
     backHref: opts.backHref,
   });
+}
+
+// "Why?" next to a wrong answer: Gemini explains the mistake (saved, so asking again is instant).
+function whyButton(q, chosen) {
+  const text = el("span", { class: "m-why", hidden: true });
+  const button = el("button", { class: "secondary small" }, "Why?");
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    text.hidden = false;
+    text.className = "m-why";
+    text.textContent = "Thinking...";
+    try {
+      const r = await postJson("/why", { note_id: q.note_id, question_index: q.question_index, chosen });
+      text.textContent = r.why;
+      button.hidden = true;
+    } catch (err) {
+      text.className = "m-why error";
+      text.textContent = err.message;
+      button.textContent = "Try again";
+      button.disabled = false;
+    }
+  });
+  return [button, text];
 }
 
 // ---------- End-of-session report (quiz and Daily Revision) ----------
@@ -559,7 +655,8 @@ async function renderProgress(body, s) {
       el("div", { class: "bar-track" }, el("div", { class: `bar ${barColor(pct)}`, style: `width: ${pct}%` })),
       el("div", { class: "progress-stats" },
         el("b", {}, `${pct}%`),
-        el("small", {}, `${r.correct} of ${r.attempts} correct`)));
+        el("small", {}, `${r.correct} of ${r.attempts} correct`)),
+      el("a", { class: "button secondary small", href: explainHref(s, r.subtopic || "General") }, "Explain"));
   })));
 }
 

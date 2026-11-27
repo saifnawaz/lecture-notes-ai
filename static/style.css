@@ -242,7 +242,7 @@ a.subject-card:hover { box-shadow: 0 4px 14px rgba(31, 36, 48, 0.1); transform: 
 /* ---------- Progress tab ---------- */
 .progress-row {
   display: grid;
-  grid-template-columns: minmax(140px, 1.2fr) 2fr 110px;
+  grid-template-columns: minmax(140px, 1.2fr) 2fr 110px auto;
   gap: 1.5rem;
   align-items: center;
   padding: 0.9rem 0;
@@ -258,7 +258,7 @@ a.subject-card:hover { box-shadow: 0 4px 14px rgba(31, 36, 48, 0.1); transform: 
 .bar.high { background: var(--correct); }
 
 @media (max-width: 760px) {
-  .progress-row { grid-template-columns: 1fr 90px; gap: 0.5rem 1rem; }
+  .progress-row { grid-template-columns: 1fr 90px auto; gap: 0.5rem 1rem; }
   .progress-row .bar-track { grid-column: 1 / -1; grid-row: 2; }
 }
 
@@ -299,3 +299,20 @@ a.subject-card:hover { box-shadow: 0 4px 14px rgba(31, 36, 48, 0.1); transform: 
 .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .chip { padding: 0.25rem 0.75rem; border-radius: 999px; background: var(--accent-bg); color: var(--accent); font-size: 0.85rem; font-weight: 600; }
 .report-actions { display: flex; gap: 0.75rem; margin-top: 2rem; }
+
+/* ---------- AI tutor ---------- */
+button.small, .button.small { padding: 0.3rem 0.7rem; font-size: 0.85rem; }
+.row-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.practice-box { margin: 1rem 0 0; }
+.tag { margin-left: 0.5rem; padding: 0.1rem 0.5rem; border-radius: 999px; background: var(--accent-bg); color: var(--accent); font-size: 0.75rem; }
+.explain-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.explain-head h3 { margin: 0; font-size: 1.3rem; }
+.explain { max-width: 720px; line-height: 1.6; }
+.explain h4 { margin: 1.5rem 0 0.5rem; font-size: 1rem; }
+.worked { padding: 0.85rem 1rem; background: var(--card); border-radius: 10px; }
+.worked p { margin: 0; }
+.worked .problem { font-weight: 600; margin-bottom: 0.5rem; }
+.worked .solution { white-space: pre-line; }
+.key-points { padding-left: 1.25rem; }
+.m-why { display: block; margin-top: 0.4rem; color: var(--text); font-size: 0.9rem; }
+.m-why.error { color: var(--wrong); }
