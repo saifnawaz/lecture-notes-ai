@@ -70,6 +70,7 @@ See `explanations.md` for how everything works.
 | POST   | `/attempts`   | Save one quiz answer (`note_id`, `question_index`, `chosen`) |
 | POST   | `/why`        | Why a wrong answer is wrong (`note_id`, `question_index`, `chosen`; saved) |
 | GET    | `/progress`   | Accuracy per subtopic, weakest first (optional `?subject=`) |
+| GET    | `/usage`      | Gemini tokens per feature: today, total, average per call |
 | GET    | `/cards/due`  | Flashcards due today or earlier (optional `?subject=`) |
 | POST   | `/cards/{id}/review` | Review one card (`quality` 0-5; the page sends 1 = Forgot, 4 = Remembered) |
 
@@ -102,7 +103,9 @@ python main.py --models
 - `app.py`: FastAPI server
 - `db.py`: SQLite storage
 - `srs.py`: SM-2 spaced repetition math
-- `quiz.py`: picks subject quiz questions, weak topics more often
+- `quiz.py`: picks subject quiz questions, weak topics more often; plans AI practice
+- `context.py`: picks the notes and PDF text about given topics (keeps prompts small)
+- `measure_tokens.py`: runs every AI feature once on a PDF and prints the tokens used
 - `rename_subject.py`: rename or merge a subject
 - `static/`: frontend (HTML, CSS, JS)
 - `main.py`: command-line version
