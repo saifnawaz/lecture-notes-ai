@@ -488,3 +488,21 @@ An upload was once saved as `e3b0c442...b855.pdf`. That is the SHA-256 of zero b
 - `call_ai()` in `app.py` turns any Gemini failure into a 502 with a readable message; the page shows a loading text
   and that message. Tests fake Gemini (`tests/test_tutor.py`), including the caches and Regenerate.
 - UI text is English: the flashcard buttons are now **Forgot** and **Remembered**.
+
+# Token usage
+
+## 43. Measuring first: `ai_usage` and the Usage page
+- After every Gemini call (retries included), `study_ai.log_usage` reads `response.usage_metadata` and saves prompt,
+  output, thinking and total tokens with the feature and model in the `ai_usage` table. A logging error never breaks a request.
+- `GET /usage` and the **Usage** page (header link) show tokens per feature today and in total, and the average per call.
+- `python measure_tokens.py lecture.pdf` runs every feature once on a real PDF with a throwaway database and prints the averages.
+- Baseline (one real run on a 520 KB lecture PDF, gemini-3.6-flash, total ≈ 45,400 tokens):
+
+| feature | avg total | prompt | output | thinking |
+|---|---:|---:|---:|---:|
+| generate | 13,767 | 8,801 | 2,354 | 2,612 |
+| more_mcqs | 12,594 | 8,870 | 820 | 2,904 |
+| flashcards | 11,666 | 8,770 | 726 | 2,170 |
+| explain | 2,255 | 669 | 478 | 1,108 |
+| practice | 4,024 | 815 | 1,152 | 2,057 |
+| why_wrong | 1,075 | 182 | 83 | 810 |
