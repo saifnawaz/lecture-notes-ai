@@ -46,7 +46,7 @@ def test_rename_merges_subjects_everywhere(client):
     client.post("/attempts", json={"note_id": a, "question_index": 0, "chosen": 0})
 
     changed = db.rename_subject("Discrete", "discrete mathematics")
-    assert changed == {"notes": 1, "attempts": 1, "cards": 1}
+    assert changed == {"notes": 1, "attempts": 1, "cards": 1, "explanations": 0}
     assert names(client) == ["Discrete Mathematics"]
     assert db.get_note(a)["subject"] == "Discrete Mathematics"
     assert client.get("/cards/due").json()[0]["subject"] == "Discrete Mathematics"
@@ -61,7 +61,7 @@ def test_rename_can_fix_case_only(client):
 
 def test_rename_unknown_subject_changes_nothing(client):
     note("Math")
-    assert db.rename_subject("Biology", "Math") == {"notes": 0, "attempts": 0, "cards": 0}
+    assert db.rename_subject("Biology", "Math") == {"notes": 0, "attempts": 0, "cards": 0, "explanations": 0}
 
 
 def names(client):
