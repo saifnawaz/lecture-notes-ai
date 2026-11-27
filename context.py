@@ -99,7 +99,7 @@ def related_context(notes, topics, note_chars=1200, text_chars=1800):
     return picked_bullets, picked_chunks
 
 
-def least_covered(text, existing, max_chars):
+def least_covered(text, existing, max_chars, size=CHUNK_CHARS):
     """The parts of a PDF's text that the existing questions/cards cover least, up to max_chars.
 
     Used for "Generate more": new items should come from new material, and the model
@@ -108,7 +108,7 @@ def least_covered(text, existing, max_chars):
     if len(text) <= max_chars:
         return text
     covered = {w: 1 for w in keywords(" ".join(existing))}
-    chunks = split_chunks(text)
+    chunks = split_chunks(text, size)
     # Fewest already-covered words per character first; ties keep their order.
     ranked = sorted(range(len(chunks)), key=lambda i: score(chunks[i], covered) / max(len(chunks[i]), 1))
     keep, used = [], 0
@@ -116,4 +116,6 @@ def least_covered(text, existing, max_chars):
         if used + len(chunks[i]) <= max_chars:
             keep.append(i)
             used += len(chunks[i]) + 1
+    if not keep:  # every piece is bigger than the budget
+        return text[:max_chars]
     return "\n".join(chunks[i] for i in sorted(keep))

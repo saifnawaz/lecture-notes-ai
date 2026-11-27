@@ -121,6 +121,10 @@ def test_short_text_is_sent_whole():
 
 def test_long_text_keeps_the_uncovered_parts():
     text = "\n".join([SETS_TEXT] * 3 + [GRAPH_TEXT])
-    picked = least_covered(text, ["What is a set?", "What is the union of two sets?"], 200)
+    picked = least_covered(text, ["What is a set?", "What is the union of two sets?"], 200, size=60)
     assert "vertices" in picked and "union" not in picked
     assert len(picked) <= 200
+
+
+def test_pieces_bigger_than_the_budget_still_send_something():
+    assert least_covered("x" * 500, [], 100, size=300) == "x" * 100
