@@ -25,7 +25,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "test.db"))
     monkeypatch.setattr(app_module, "UPLOAD_DIR", tmp_path / "uploads")
     monkeypatch.setattr(app_module, "make_client", lambda: None)
-    monkeypatch.setattr(app_module, "generate", lambda client, path, content=None: result())
+    monkeypatch.setattr(app_module, "generate", lambda client, path, content=None, text="": result())
     with TestClient(app_module.app) as c:
         yield c
 
@@ -48,7 +48,7 @@ def test_upload_saves_pdf_and_hash(client):
 def test_generation_gets_the_saved_pdf(client, monkeypatch):
     seen = {}
 
-    def fake(client_, path, content=None):
+    def fake(client_, path, content=None, text=""):
         seen["bytes"] = Path(path).read_bytes()
         seen["content"] = content
         return result()
@@ -116,7 +116,7 @@ def test_same_pdf_in_other_subject_is_fine(client):
 
 
 def test_failed_generation_removes_pdf(client, monkeypatch, tmp_path):
-    def fail(client_, path, content=None):
+    def fail(client_, path, content=None, text=""):
         raise GenerationError("nope")
     monkeypatch.setattr(app_module, "generate", fail)
     assert upload(client).status_code == 502

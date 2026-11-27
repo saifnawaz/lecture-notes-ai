@@ -17,8 +17,8 @@ import srs
 import study_ai
 from quiz import pick_questions, plan_practice
 from study_ai import (
-    GenerationError, explain_topic, generate, generate_flashcards, generate_mcqs, generate_practice,
-    make_client, shuffle_options, why_wrong,
+    GenerationError, explain_topic, extract_text, generate, generate_flashcards, generate_mcqs,
+    generate_practice, make_client, shuffle_options, why_wrong,
 )
 
 MAX_UPLOAD_MB = 20
@@ -79,8 +79,9 @@ def generate_notes(
         remove_pdf_if_unused(pdf_path)
         log.error("saved %s is %d bytes, upload was %d", pdf_path, saved_size, len(content))
         raise HTTPException(500, "The PDF couldn't be saved. Please try again.")
+    text = extract_text(content)  # once; later calls use this instead of the PDF
     try:
-        data = generate(make_client(), pdf_path, content)
+        data = generate(make_client(), pdf_path, content, text)
     except Exception as e:
         remove_pdf_if_unused(pdf_path)
         if isinstance(e, GenerationError):
@@ -91,11 +92,25 @@ def generate_notes(
 
     if subject:
         data["subject"] = subject  # user's choice wins over Gemini's guess
-    data.update(filename=file.filename, pdf_path=pdf_path, pdf_hash=pdf_hash)
+    data.update(filename=file.filename, pdf_path=pdf_path, pdf_hash=pdf_hash, source_text=text)
 
     data["mcqs"] = shuffle_options(data["mcqs"])
     note_id = db.save_note(data)
-    return db.get_note(note_id)
+    return public_note(db.get_note(note_id))
+
+
+def public_note(note):
+    """A note for the page: without the (long) extracted PDF text."""
+    note.pop("source_text", None)
+    return note
+
+
+def source_text(note):
+    """The note's PDF text. Older notes get it extracted from the saved PDF now, once."""
+    if note["source_text"] is None and note["pdf_path"] and Path(note["pdf_path"]).exists():
+        note["source_text"] = extract_text(Path(note["pdf_path"]).read_bytes())
+        db.set_source_text(note["id"], note["source_text"])
+    return note["source_text"] or ""
 
 
 # ---------- Subjects ----------
@@ -275,7 +290,7 @@ def get_note(note_id: int):
         raise HTTPException(404, "Note not found.")
     note["accuracy"] = db.note_accuracy(note_id)  # None if quiz never tried
     note["card_count"] = db.count_cards(note_id)
-    return note
+    return public_note(note)
 
 
 @app.delete("/notes/{note_id}")
@@ -311,7 +326,7 @@ def generate_more(note_id, generator, existing_of):
         raise HTTPException(404, "Note not found.")
     return note, call_ai(
         "generate more", generator, note["subject"], note["topic"], note["notes"],
-        existing=existing_of(note), pdf_path=note["pdf_path"],
+        existing=existing_of(note), pdf_path=note["pdf_path"], text=source_text(note),
     )
 
 

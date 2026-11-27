@@ -112,7 +112,8 @@ def migrate(conn):
     """Bring an older notes.db up to date. Safe to run every time."""
     # New note columns for saved PDFs (ALTER TABLE has no "IF NOT EXISTS").
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(notes)")}
-    for column in ("filename", "pdf_path", "pdf_hash"):
+    # source_text: the PDF's extracted text. NULL = not tried yet, "" = no usable text (scanned PDF).
+    for column in ("filename", "pdf_path", "pdf_hash", "source_text"):
         if column not in columns:
             conn.execute(f"ALTER TABLE notes ADD COLUMN {column} TEXT")
 
@@ -236,8 +237,8 @@ def save_note(data):
     with connect() as conn:
         ensure_subject(conn, subject)
         cur = conn.execute(
-            """INSERT INTO notes (subject, topic, notes, mcqs, created_at, filename, pdf_path, pdf_hash)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO notes (subject, topic, notes, mcqs, created_at, filename, pdf_path, pdf_hash, source_text)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 subject,
                 data.get("topic", ""),
@@ -247,6 +248,7 @@ def save_note(data):
                 data.get("filename"),
                 data.get("pdf_path"),
                 data.get("pdf_hash"),
+                data.get("source_text"),
             ),
         )
         note_id = cur.lastrowid
@@ -321,6 +323,11 @@ def add_mcqs(note_id, new_mcqs):
             (json.dumps(mcqs, ensure_ascii=False), note_id),
         )
         return len(mcqs)
+
+
+def set_source_text(note_id, text):
+    with connect() as conn:
+        conn.execute("UPDATE notes SET source_text = ? WHERE id = ?", (text, note_id))
 
 
 def find_note_by_hash(subject, pdf_hash):

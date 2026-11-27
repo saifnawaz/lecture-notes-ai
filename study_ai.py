@@ -13,6 +13,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from google import genai
 from google.genai import errors, types
+from pypdf import PdfReader
 
 load_dotenv()
 
@@ -20,6 +21,8 @@ API_KEY = os.getenv("GEMINI_API_KEY")
 MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
 FALLBACKS = [m.strip() for m in os.getenv("GEMINI_FALLBACKS", "gemini-3.5-flash,gemini-3.5-flash-lite").split(",") if m.strip()]
 RETRIES = 3
+MIN_CHARS_PER_PAGE = 100  # less than this on average = probably a scanned PDF: send the file instead
+MAX_TEXT_CHARS = 120_000  # about 30k tokens; longer material is cut
 
 # Called after every Gemini answer as usage_hook(feature, model, usage_dict).
 # app.py points it at db.log_usage; the command-line tool leaves it empty.
@@ -344,11 +347,42 @@ def upload_file(client, file_path, content=None):
         raise GenerationError(f"Couldn't upload the file to Gemini ({e.message or e.code}).") from e
 
 
-def generate(client, file_path, content=None):
-    """Upload the file to Gemini and return the notes/MCQs/flashcards dict.
+def compact(text):
+    """Squeeze runs of spaces and blank lines: same words, fewer tokens."""
+    lines = (re.sub(r"[ \t]+", " ", line).strip() for line in text.splitlines())
+    return "\n".join(line for line in lines if line)
 
-    content: the file's bytes, if already in memory (the web upload). Otherwise file_path is read.
+
+def extract_text(content):
+    """The text of a PDF (bytes), done once at upload so later calls don't resend the file.
+
+    Returns "" when pypdf can't read it or there is too little text (a scanned PDF);
+    the caller then sends the PDF itself.
     """
+    try:
+        pages = [page.extract_text() or "" for page in PdfReader(io.BytesIO(content)).pages]
+    except Exception as e:
+        print(f"  Couldn't extract text: {e}")
+        return ""
+    text = compact("\n".join(pages))
+    if not pages or len(text) < MIN_CHARS_PER_PAGE * len(pages):
+        print(f"  Only {len(text)} characters of text in {len(pages)} pages: will send the PDF.")
+        return ""
+    return text[:MAX_TEXT_CHARS]
+
+
+def material(text):
+    return f"\nStudy material:\n{text}"
+
+
+def generate(client, file_path, content=None, text=""):
+    """Return the notes/MCQs/flashcards dict for one PDF.
+
+    text: the PDF's extracted text. If there is any, only that is sent;
+    otherwise the file is uploaded (content = its bytes if already in memory, else file_path is read).
+    """
+    if text:
+        return ask_with_fallback(client, [PROMPT + material(text)], validate_notes)
     uploaded = upload_file(client, file_path, content)
     return ask_with_fallback(client, [uploaded, PROMPT], validate_notes)
 
@@ -370,10 +404,14 @@ def only_new(items, existing, key):
     return fresh
 
 
-def ask_more(client, template, validate, feature, subject, topic, notes, existing, pdf_path):
-    """Ask for more items, from the original PDF if we have it, else from the notes text."""
+def ask_more(client, template, validate, feature, subject, topic, notes, existing, pdf_path, text):
+    """Ask for more items: from the PDF's saved text, else the PDF file, else the notes."""
     about = f'"{topic or "untitled"}" ({subject or "unknown subject"})'
-    if pdf_path and Path(pdf_path).exists():
+    if text:
+        source = f"Use the study material below on {about}."
+        notes_block = material(text)
+        contents = []
+    elif pdf_path and Path(pdf_path).exists():
         source = f"Use the attached study material on {about}."
         notes_block = ""
         contents = [upload_file(client, pdf_path)]
@@ -389,15 +427,17 @@ def ask_more(client, template, validate, feature, subject, topic, notes, existin
     return ask_with_fallback(client, contents + [prompt], validate, feature)
 
 
-def generate_flashcards(client, subject, topic, notes, existing=(), pdf_path=None):
+def generate_flashcards(client, subject, topic, notes, existing=(), pdf_path=None, text=""):
     """Make new flashcards that don't repeat the existing fronts."""
-    data = ask_more(client, FLASHCARD_PROMPT, validate_flashcards, "flashcards", subject, topic, notes, existing, pdf_path)
+    data = ask_more(client, FLASHCARD_PROMPT, validate_flashcards, "flashcards",
+                    subject, topic, notes, existing, pdf_path, text)
     return only_new(data["flashcards"], existing, "front")
 
 
-def generate_mcqs(client, subject, topic, notes, existing=(), pdf_path=None):
+def generate_mcqs(client, subject, topic, notes, existing=(), pdf_path=None, text=""):
     """Make new MCQs (options shuffled) that don't repeat the existing questions."""
-    data = ask_more(client, MCQ_PROMPT, validate_mcqs, "more_mcqs", subject, topic, notes, existing, pdf_path)
+    data = ask_more(client, MCQ_PROMPT, validate_mcqs, "more_mcqs",
+                    subject, topic, notes, existing, pdf_path, text)
     return shuffle_options(only_new(data["mcqs"], existing, "question"))
 
 
