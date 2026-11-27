@@ -4,6 +4,7 @@
 //   #/s/3/quiz                subject 3, Quiz tab
 //   #/s/3/pdf/12/flashcards   PDF 12 inside subject 3, Flashcards tab
 //   #/s/3/explain/Sets        AI explanation of the topic "Sets" in subject 3
+//   #/usage                   Gemini token usage per feature
 // AI text is always inserted as text (never as HTML), so it can't inject anything.
 
 const app = document.getElementById("app");
@@ -102,6 +103,8 @@ async function route() {
   try {
     if (parts[0] === "s" && parts[2] === "pdf") {
       await showPdf(Number(parts[1]), Number(parts[3]), parts[4] || "notes");
+    } else if (parts[0] === "usage") {
+      await showUsage();
     } else if (parts[0] === "s") {
       await showSubject(Number(parts[1]), parts[2] || "overview", parts[3]);
     } else {
@@ -763,6 +766,33 @@ async function renderNoteCards(body, nid) {
     el("small", {}, c.due_date <= today
       ? "due now"
       : `next review: ${new Date(`${c.due_date}T00:00`).toLocaleDateString()}`)))));
+}
+
+// ---------- Usage: Gemini tokens per feature ----------
+
+async function showUsage() {
+  setBreadcrumb([{ label: "Usage" }]);
+  const rows = await api("/usage");
+  const n = (value) => Number(value || 0).toLocaleString();
+  const sum = (key) => rows.reduce((total, r) => total + r[key], 0);
+  app.replaceChildren(
+    el("h2", { class: "page-title" }, "Gemini token usage"),
+    el("div", { class: "stat-row" },
+      stat(n(sum("tokens_today")), "tokens today"),
+      stat(n(sum("tokens")), "tokens in total"),
+      stat(n(sum("calls")), "calls in total")),
+    rows.length
+      ? el("table", { class: "usage" },
+          el("thead", {}, el("tr", {},
+            ["Feature", "Calls today", "Tokens today", "Calls", "Tokens", "Avg / call",
+              "Avg prompt", "Avg output", "Avg thinking"].map((h) => el("th", {}, h)))),
+          el("tbody", {}, rows.map((r) => el("tr", {},
+            el("td", {}, r.feature),
+            [r.calls_today, r.tokens_today, r.calls, r.tokens, r.avg_total,
+              r.avg_prompt, r.avg_output, r.avg_thinking].map((v) => el("td", {}, n(v)))))))
+      : el("p", { class: "muted" }, "No Gemini calls yet."),
+    el("p", { class: "muted" }, "Every call counts, including retries. Answers served from a cache use no tokens."),
+  );
 }
 
 // ---------- Start ----------
