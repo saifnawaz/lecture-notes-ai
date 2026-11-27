@@ -200,8 +200,9 @@ def rename_subject(old, new):
     changed = {}
     with connect() as conn:
         for table in ("notes", "attempts", "cards", "explanations"):
+            # OR REPLACE: when merging, an explanation of the same topic in both subjects keeps one.
             cur = conn.execute(
-                f"UPDATE {table} SET subject = ? WHERE subject = ? COLLATE NOCASE", (new, old)
+                f"UPDATE OR REPLACE {table} SET subject = ? WHERE subject = ? COLLATE NOCASE", (new, old)
             )
             changed[table] = cur.rowcount
         # Subjects table: merge into the existing row, or rename the old one.
