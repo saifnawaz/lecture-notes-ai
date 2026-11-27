@@ -47,7 +47,7 @@ Daily Revision session you get a report: score, the questions/cards you got wron
 right answers, topics to revise, and **Practice mistakes again** (practice rounds aren't saved).
 
 In Daily Revision, click the card or press Space to flip it, then press **Forgot**
-(forgot, key 1) or **Remembered** (remembered, key 2). Forgotten cards come back at the end of the
+(key 1) or **Remembered** (key 2). Forgotten cards come back at the end of the
 session. Cards are scheduled with the SM-2 spaced repetition algorithm (`srs.py`).
 In quizzes, keys 1-4 pick an option and Enter goes to the next question.
 See `explanations.md` for how everything works.

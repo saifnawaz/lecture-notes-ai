@@ -81,7 +81,7 @@ def test_generate_flashcards_unknown_note(client):
 
 
 def test_two_button_qualities(client, note_id):
-    """Daily Revision sends 1 (Bhool gaya) or 4 (Yaad tha)."""
+    """Daily Revision sends 1 (Forgot) or 4 (Remembered)."""
     forgot, remembered = [c["id"] for c in client.get("/cards/due").json()]
 
     card = client.post(f"/cards/{forgot}/review", json={"quality": 1}).json()
