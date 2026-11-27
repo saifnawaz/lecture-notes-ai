@@ -90,6 +90,63 @@ Rules:
 {existing}
 {notes}"""
 
+EXPLAIN_PROMPT = """You are a patient tutor for a university student.
+Explain the topic "{subtopic}" from {subject}, using the study notes below as context.
+Write in clear, simple English: short sentences, everyday words, explain every technical term.
+Return ONLY valid JSON in this exact shape:
+
+{{
+  "explanation": ["short paragraph", "..."],
+  "example": {{"problem": "a worked example question", "solution": "the solution, step by step"}},
+  "key_points": ["point to remember", "point to remember", "point to remember"]
+}}
+
+Rules:
+- 2 to 4 short paragraphs.
+- One worked example, solved step by step.
+- Exactly 3 key points.
+
+Notes:
+{notes}"""
+
+PRACTICE_PROMPT = """You are a study assistant for a university student who is weak in some topics.
+Using the study notes below, make {total} NEW multiple-choice questions, this many per topic:
+{plan}
+
+Return ONLY valid JSON in this exact shape:
+
+{{
+  "mcqs": [
+    {{
+      "question": "question text",
+      "options": ["A option", "B option", "C option", "D option"],
+      "answer": 0,
+      "subtopic": "one of the topics above, spelled exactly the same",
+      "explanation": "one line on why the answer is correct, in simple English"
+    }}
+  ]
+}}
+
+Rules:
+- "answer" is the index (0-3) of the correct option.
+- Questions must test understanding, not just copying lines.
+- Do NOT repeat or rephrase any of these existing questions:
+{existing}
+
+Notes:
+{notes}"""
+
+WHY_PROMPT = """A university student answered this multiple-choice question wrong.
+
+Question: {question}
+Options:
+{options}
+Student's choice: {chosen}
+Correct answer: {answer}
+
+In 3 to 4 short sentences of clear, simple English, explain why the student's choice is wrong
+and why the correct answer is right. Return ONLY valid JSON: {{"why": "your explanation"}}"""
+
 
 class GenerationError(Exception):
     """Raised when no model could produce a result."""
@@ -313,3 +370,87 @@ def generate_mcqs(client, subject, topic, notes, existing=(), pdf_path=None):
     """Make new MCQs (options shuffled) that don't repeat the existing questions."""
     data = ask_more(client, MCQ_PROMPT, validate_mcqs, subject, topic, notes, existing, pdf_path)
     return shuffle_options(only_new(data["mcqs"], existing, "question"))
+
+
+# ---------- AI tutor ----------
+
+def is_text_list(value, min_len=1):
+    return isinstance(value, list) and len(value) >= min_len and all(isinstance(v, str) and v.strip() for v in value)
+
+
+def validate_explanation(data):
+    """Raise BadResponse unless data looks like EXPLAIN_PROMPT's JSON."""
+    if not isinstance(data, dict):
+        raise BadResponse(f"expected an object, got {type(data).__name__}")
+    if not is_text_list(data.get("explanation")):
+        raise BadResponse('"explanation" missing or not a list of text')
+    example = data.get("example")
+    if not (isinstance(example, dict) and isinstance(example.get("problem"), str)
+            and isinstance(example.get("solution"), str)):
+        raise BadResponse('"example" needs "problem" and "solution"')
+    if not is_text_list(data.get("key_points"), 3):
+        raise BadResponse('"key_points" needs 3 points')
+
+
+def validate_why(data):
+    if not (isinstance(data, dict) and isinstance(data.get("why"), str) and data["why"].strip()):
+        raise BadResponse('"why" missing or empty')
+
+
+def notes_text(notes):
+    return "
+".join(f"- {n}" for n in notes) or "- (no notes saved)"
+
+
+def explain_topic(client, subject, subtopic, notes):
+    """Simple explanation, one worked example and 3 key points for one subtopic."""
+    prompt = EXPLAIN_PROMPT.format(subject=subject, subtopic=subtopic, notes=notes_text(notes))
+    data = ask_with_fallback(client, [prompt], validate_explanation)
+    return {
+        "explanation": data["explanation"],
+        "example": {"problem": data["example"]["problem"], "solution": data["example"]["solution"]},
+        "key_points": data["key_points"][:3],
+    }
+
+
+def generate_practice(client, subject, plan, notes, existing=()):
+    """New MCQs for weak subtopics. plan: [(subtopic, how_many)], weakest first.
+
+    Questions whose subtopic isn't one of the planned ones are dropped;
+    the rest get the planned spelling, so their answers count for the right topic.
+    """
+    names = {topic.casefold(): topic for topic, _ in plan}
+
+    def validate(data):
+        validate_mcqs(data)
+        if not any(str(q.get("subtopic", "")).casefold() in names for q in data["mcqs"]):
+            raise BadResponse("no question uses one of the requested subtopics")
+
+    prompt = PRACTICE_PROMPT.format(
+        total=sum(n for _, n in plan),
+        plan="
+".join(f"- {topic}: {n}" for topic, n in plan),
+        existing="
+".join(f"- {e}" for e in existing) or "- (none yet)",
+        notes=notes_text(notes),
+    )
+    data = ask_with_fallback(client, [prompt], validate)
+    mcqs = [
+        {**q, "subtopic": names[str(q.get("subtopic", "")).casefold()]}
+        for q in data["mcqs"]
+        if str(q.get("subtopic", "")).casefold() in names
+    ]
+    return shuffle_options(only_new(mcqs, existing, "question"))
+
+
+def why_wrong(client, question, options, chosen, answer):
+    """3-4 lines on why `chosen` is wrong and `answer` is right (both option indexes)."""
+    letter = "ABCDEFGH"
+    prompt = WHY_PROMPT.format(
+        question=question,
+        options="
+".join(f"{letter[i]}) {o}" for i, o in enumerate(options)),
+        chosen=f"{letter[chosen]}) {options[chosen]}",
+        answer=f"{letter[answer]}) {options[answer]}",
+    )
+    return ask_with_fallback(client, [prompt], validate_why)["why"].strip()
