@@ -22,7 +22,7 @@ class FakeGemini:
         self.answer = answer
         self.contents = None
 
-    def __call__(self, client, contents, validate):
+    def __call__(self, client, contents, validate, *args, **kwargs):
         self.contents = contents
         validate(self.answer)
         return self.answer

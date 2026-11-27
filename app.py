@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 import db
 import srs
+import study_ai
 from quiz import pick_questions, plan_practice
 from study_ai import (
     GenerationError, explain_topic, generate, generate_flashcards, generate_mcqs, generate_practice,
@@ -24,6 +25,7 @@ MAX_UPLOAD_MB = 20
 UPLOAD_DIR = Path("uploads")  # saved PDFs, named by their SHA-256 hash
 GENERIC_ERROR = "Something went wrong while talking to the AI. Please try again."
 log = logging.getLogger(__name__)
+study_ai.usage_hook = db.log_usage  # every Gemini call's token counts go to the ai_usage table
 
 
 @asynccontextmanager
@@ -253,6 +255,12 @@ def why(body: WhyRequest):
     text = call_ai("why wrong", why_wrong, q["question"], q["options"], body.chosen, q["answer"])
     db.save_why(body.note_id, body.question_index, body.chosen, text)
     return {"why": text, "cached": False}
+
+
+@app.get("/usage")
+def usage():
+    """Gemini tokens per feature: today, total and average per call."""
+    return db.usage_summary()
 
 
 @app.get("/notes")

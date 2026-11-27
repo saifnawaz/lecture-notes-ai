@@ -21,6 +21,10 @@ MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
 FALLBACKS = [m.strip() for m in os.getenv("GEMINI_FALLBACKS", "gemini-3.5-flash,gemini-3.5-flash-lite").split(",") if m.strip()]
 RETRIES = 3
 
+# Called after every Gemini answer as usage_hook(feature, model, usage_dict).
+# app.py points it at db.log_usage; the command-line tool leaves it empty.
+usage_hook = None
+
 PROMPT = """You are a study assistant for a university student.
 Read the attached study material and return ONLY valid JSON in this exact shape:
 
@@ -240,12 +244,37 @@ def list_models(client):
     ]
 
 
-def ask(client, model, contents, validate):
+def read_usage(response):
+    """Token counts from a Gemini response (0 when the SDK doesn't report one)."""
+    meta = getattr(response, "usage_metadata", None)
+
+    def count(name):
+        return getattr(meta, name, None) or 0
+    return {
+        "prompt_tokens": count("prompt_token_count"),
+        "output_tokens": count("candidates_token_count"),
+        "thinking_tokens": count("thoughts_token_count"),
+        "total_tokens": count("total_token_count"),
+    }
+
+
+def log_usage(feature, model, response):
+    """Hand the token counts to usage_hook. Logging must never break a request."""
+    if usage_hook is None:
+        return
+    try:
+        usage_hook(feature, model, read_usage(response))
+    except Exception as e:
+        print(f"  Couldn't log token usage: {e}")
+
+
+def ask(client, model, contents, validate, feature="generate"):
     response = client.models.generate_content(
         model=model,
         contents=contents,
         config=types.GenerateContentConfig(response_mime_type="application/json"),
     )
+    log_usage(feature, model, response)  # before checking: a bad answer still cost tokens
     data = unwrap(json.loads(response.text))
     validate(data)  # raises BadResponse if the shape is wrong
     return data
@@ -266,7 +295,7 @@ def is_file_error(e):
     return any(word in text for word in ("file", "document", "mime", "pdf", "page"))
 
 
-def ask_with_fallback(client, contents, validate):
+def ask_with_fallback(client, contents, validate, feature="generate"):
     """Try the main model, then each fallback, with retries.
 
     A bad answer (broken JSON or wrong shape) is retried.
@@ -276,7 +305,7 @@ def ask_with_fallback(client, contents, validate):
         for attempt in range(1, RETRIES + 1):
             try:
                 print(f"Asking {model} (try {attempt})...")
-                return ask(client, model, contents, validate)
+                return ask(client, model, contents, validate, feature)
             except errors.ServerError:
                 print("  Server busy.")
                 time.sleep(attempt * 3)
@@ -341,7 +370,7 @@ def only_new(items, existing, key):
     return fresh
 
 
-def ask_more(client, template, validate, subject, topic, notes, existing, pdf_path):
+def ask_more(client, template, validate, feature, subject, topic, notes, existing, pdf_path):
     """Ask for more items, from the original PDF if we have it, else from the notes text."""
     about = f'"{topic or "untitled"}" ({subject or "unknown subject"})'
     if pdf_path and Path(pdf_path).exists():
@@ -357,18 +386,18 @@ def ask_more(client, template, validate, subject, topic, notes, existing, pdf_pa
         existing="\n".join(f"- {e}" for e in existing) or "- (none yet)",
         notes=notes_block,
     )
-    return ask_with_fallback(client, contents + [prompt], validate)
+    return ask_with_fallback(client, contents + [prompt], validate, feature)
 
 
 def generate_flashcards(client, subject, topic, notes, existing=(), pdf_path=None):
     """Make new flashcards that don't repeat the existing fronts."""
-    data = ask_more(client, FLASHCARD_PROMPT, validate_flashcards, subject, topic, notes, existing, pdf_path)
+    data = ask_more(client, FLASHCARD_PROMPT, validate_flashcards, "flashcards", subject, topic, notes, existing, pdf_path)
     return only_new(data["flashcards"], existing, "front")
 
 
 def generate_mcqs(client, subject, topic, notes, existing=(), pdf_path=None):
     """Make new MCQs (options shuffled) that don't repeat the existing questions."""
-    data = ask_more(client, MCQ_PROMPT, validate_mcqs, subject, topic, notes, existing, pdf_path)
+    data = ask_more(client, MCQ_PROMPT, validate_mcqs, "more_mcqs", subject, topic, notes, existing, pdf_path)
     return shuffle_options(only_new(data["mcqs"], existing, "question"))
 
 
@@ -404,7 +433,7 @@ def notes_text(notes):
 def explain_topic(client, subject, subtopic, notes):
     """Simple explanation, one worked example and 3 key points for one subtopic."""
     prompt = EXPLAIN_PROMPT.format(subject=subject, subtopic=subtopic, notes=notes_text(notes))
-    data = ask_with_fallback(client, [prompt], validate_explanation)
+    data = ask_with_fallback(client, [prompt], validate_explanation, "explain")
     return {
         "explanation": data["explanation"],
         "example": {"problem": data["example"]["problem"], "solution": data["example"]["solution"]},
@@ -431,7 +460,7 @@ def generate_practice(client, subject, plan, notes, existing=()):
         existing="\n".join(f"- {e}" for e in existing) or "- (none yet)",
         notes=notes_text(notes),
     )
-    data = ask_with_fallback(client, [prompt], validate)
+    data = ask_with_fallback(client, [prompt], validate, "practice")
     mcqs = [
         {**q, "subtopic": names[str(q.get("subtopic", "")).casefold()]}
         for q in data["mcqs"]
@@ -449,4 +478,4 @@ def why_wrong(client, question, options, chosen, answer):
         chosen=f"{letter[chosen]}) {options[chosen]}",
         answer=f"{letter[answer]}) {options[answer]}",
     )
-    return ask_with_fallback(client, [prompt], validate_why)["why"].strip()
+    return ask_with_fallback(client, [prompt], validate_why, "why_wrong")["why"].strip()

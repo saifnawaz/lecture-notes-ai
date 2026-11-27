@@ -91,6 +91,20 @@ def init_db():
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ai_usage (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                feature TEXT,  -- generate, more_mcqs, flashcards, explain, practice, why_wrong
+                model TEXT,
+                prompt_tokens INTEGER,
+                output_tokens INTEGER,
+                thinking_tokens INTEGER,
+                total_tokens INTEGER,
+                created_at TEXT
+            )
+            """
+        )
         migrate(conn)
 
 
@@ -506,3 +520,36 @@ def save_why(note_id, question_index, chosen, text):
             "INSERT OR REPLACE INTO why_wrong (note_id, question_index, chosen, text, created_at) VALUES (?, ?, ?, ?, ?)",
             (note_id, question_index, chosen, text, now()),
         )
+
+
+# ---------- Token usage ----------
+
+def log_usage(feature, model, usage):
+    """Save the token counts of one Gemini call. usage: dict from study_ai.read_usage."""
+    with connect() as conn:
+        conn.execute(
+            """INSERT INTO ai_usage
+               (feature, model, prompt_tokens, output_tokens, thinking_tokens, total_tokens, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (feature, model, usage["prompt_tokens"], usage["output_tokens"],
+             usage["thinking_tokens"], usage["total_tokens"], now()),
+        )
+
+
+def usage_summary():
+    """Per feature: calls and tokens today and in total, and the average tokens per call."""
+    sql = """
+        SELECT feature,
+               SUM(date(created_at, 'localtime') = date('now', 'localtime')) AS calls_today,
+               COALESCE(SUM(CASE WHEN date(created_at, 'localtime') = date('now', 'localtime')
+                                 THEN total_tokens END), 0) AS tokens_today,
+               COUNT(*) AS calls,
+               SUM(total_tokens) AS tokens,
+               ROUND(AVG(prompt_tokens)) AS avg_prompt,
+               ROUND(AVG(output_tokens)) AS avg_output,
+               ROUND(AVG(thinking_tokens)) AS avg_thinking,
+               ROUND(AVG(total_tokens)) AS avg_total
+        FROM ai_usage GROUP BY feature ORDER BY tokens DESC
+    """
+    with connect() as conn:
+        return [dict(r) for r in conn.execute(sql).fetchall()]
