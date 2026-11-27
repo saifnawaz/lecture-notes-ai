@@ -14,9 +14,10 @@ from pydantic import BaseModel, Field
 
 import db
 import srs
-from quiz import pick_questions
+from quiz import pick_questions, plan_practice
 from study_ai import (
-    GenerationError, generate, generate_flashcards, generate_mcqs, make_client, shuffle_options,
+    GenerationError, explain_topic, generate, generate_flashcards, generate_mcqs, generate_practice,
+    make_client, shuffle_options, why_wrong,
 )
 
 MAX_UPLOAD_MB = 20
@@ -144,6 +145,116 @@ def subject_quiz(subject_id: int, n: int = Query(10, ge=1, le=50), subtopic: str
     return pick_questions(questions, mastery, n)
 
 
+# ---------- AI tutor ----------
+
+def subject_or_404(subject_id):
+    subject = db.get_subject(subject_id)
+    if subject is None:
+        raise HTTPException(404, "Subject not found.")
+    return subject
+
+
+def subject_note_bullets(subject_name):
+    notes = [n for note in db.subject_notes(subject_name) for n in note["notes"]]
+    if not notes:
+        raise HTTPException(400, "This subject has no notes yet. Upload a PDF first.")
+    return notes
+
+
+@app.post("/subjects/{subject_id}/topics/{subtopic:path}/explain")
+def explain(subject_id: int, subtopic: str, regenerate: bool = False):
+    """Explain one subtopic from the subject's notes. Saved, so the next time is instant.
+
+    ?regenerate=true asks Gemini again and replaces the saved explanation.
+    """
+    subject = subject_or_404(subject_id)
+    subtopic = subtopic.strip()
+    if not subtopic:
+        raise HTTPException(400, "Topic can't be empty.")
+    if not regenerate:
+        saved = db.get_explanation(subject["name"], subtopic)
+        if saved:
+            return {"subtopic": subtopic, **saved, "cached": True}
+    data = call_ai("explain", explain_topic, subject["name"], subtopic, subject_note_bullets(subject["name"]))
+    db.save_explanation(subject["name"], subtopic, data)
+    return {"subtopic": subtopic, **db.get_explanation(subject["name"], subtopic), "cached": False}
+
+
+def topic_masteries(subject_name, questions):
+    """[(subtopic, smoothed mastery)] for every topic that has questions or attempts.
+
+    Topics never answered count as 0.5, like in the quiz picker.
+    """
+    topics = {q["subtopic"].casefold(): (q["subtopic"], 0.5) for q in questions}
+    for r in db.progress(subject_name):
+        topics[r["subtopic"].casefold()] = (r["subtopic"], db.mastery_score(r["correct"], r["attempts"]))
+    return list(topics.values())
+
+
+@app.post("/subjects/{subject_id}/practice")
+def practice(subject_id: int, n: int = Query(8, ge=5, le=10)):
+    """Make n NEW MCQs for the weakest topics and return them as a quiz.
+
+    They are saved as normal questions (marked "practice": true) on the note that
+    already has the most questions about that topic, so answers count toward progress.
+    """
+    subject = subject_or_404(subject_id)
+    questions = db.subject_questions(subject["name"])
+    plan = plan_practice(topic_masteries(subject["name"], questions), n)
+    if not plan:
+        raise HTTPException(400, "This subject has no questions yet. Upload a PDF first.")
+    wanted = {topic.casefold() for topic, _ in plan}
+    existing = [q["question"] for q in questions if q["subtopic"].casefold() in wanted]
+    mcqs = call_ai("practice", generate_practice, subject["name"], plan,
+                   subject_note_bullets(subject["name"]), existing)
+
+    # Which note each topic's new questions go to.
+    home = {}
+    for topic in wanted:
+        counts = {}
+        for q in questions:
+            if q["subtopic"].casefold() == topic:
+                counts[q["note_id"]] = counts.get(q["note_id"], 0) + 1
+        home[topic] = max(counts, key=counts.get) if counts else questions[-1]["note_id"]
+    by_note = {}
+    for q in mcqs:
+        by_note.setdefault(home[q["subtopic"].casefold()], []).append({**q, "practice": True})
+
+    added = []
+    for note_id, new in by_note.items():
+        start = db.add_mcqs(note_id, new) - len(new)
+        added += [(note_id, start + i) for i in range(len(new))]
+    fresh = {(q["note_id"], q["question_index"]): q for q in db.subject_questions(subject["name"])}
+    return [fresh[key] for key in added]
+
+
+class WhyRequest(BaseModel):
+    note_id: int
+    question_index: int
+    chosen: int
+
+
+@app.post("/why")
+def why(body: WhyRequest):
+    """Why was my answer wrong? Saved per (question, chosen option)."""
+    note = db.get_note(body.note_id)
+    if note is None:
+        raise HTTPException(404, "Note not found.")
+    if not 0 <= body.question_index < len(note["mcqs"]):
+        raise HTTPException(400, "Invalid question_index.")
+    q = note["mcqs"][body.question_index]
+    if not 0 <= body.chosen < len(q["options"]):
+        raise HTTPException(400, "Invalid chosen option.")
+    if body.chosen == q["answer"]:
+        raise HTTPException(400, "That answer is correct.")
+    saved = db.get_why(body.note_id, body.question_index, body.chosen)
+    if saved:
+        return {"why": saved, "cached": True}
+    text = call_ai("why wrong", why_wrong, q["question"], q["options"], body.chosen, q["answer"])
+    db.save_why(body.note_id, body.question_index, body.chosen, text)
+    return {"why": text, "cached": False}
+
+
 @app.get("/notes")
 def list_notes(subject: str | None = None):
     return db.list_notes(subject)
@@ -169,6 +280,18 @@ def delete_note(note_id: int):
     return {"deleted": note_id}
 
 
+def call_ai(what, fn, *args, **kwargs):
+    """Run a Gemini call; any failure becomes a 502 with a readable message."""
+    try:
+        return fn(make_client(), *args, **kwargs)
+    except GenerationError as e:
+        raise HTTPException(502, str(e))
+    except Exception:
+        # Anything unexpected (network, Gemini SDK, ...) still gets a readable message.
+        log.exception("%s failed", what)
+        raise HTTPException(502, GENERIC_ERROR)
+
+
 def generate_more(note_id, generator, existing_of):
     """Shared code for "Generate more MCQs / flashcards".
 
@@ -178,16 +301,10 @@ def generate_more(note_id, generator, existing_of):
     note = db.get_note(note_id)
     if note is None:
         raise HTTPException(404, "Note not found.")
-    try:
-        return note, generator(
-            make_client(), note["subject"], note["topic"], note["notes"],
-            existing=existing_of(note), pdf_path=note["pdf_path"],
-        )
-    except GenerationError as e:
-        raise HTTPException(502, str(e))
-    except Exception:
-        log.exception("generate more failed")
-        raise HTTPException(502, GENERIC_ERROR)
+    return note, call_ai(
+        "generate more", generator, note["subject"], note["topic"], note["notes"],
+        existing=existing_of(note), pdf_path=note["pdf_path"],
+    )
 
 
 @app.post("/notes/{note_id}/flashcards")
