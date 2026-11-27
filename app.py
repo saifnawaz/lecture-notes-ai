@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 import db
 import srs
 import study_ai
-from context import related_context
+from context import least_covered, related_context
 from quiz import pick_questions, plan_practice
 from study_ai import (
     GenerationError, explain_topic, extract_text, generate, generate_flashcards, generate_mcqs,
@@ -24,6 +24,7 @@ from study_ai import (
 
 MAX_UPLOAD_MB = 20
 UPLOAD_DIR = Path("uploads")  # saved PDFs, named by their SHA-256 hash
+MORE_TEXT_CHARS = 9000  # "Generate more" sends at most this much PDF text (about 3k tokens)
 GENERIC_ERROR = "Something went wrong while talking to the AI. Please try again."
 log = logging.getLogger(__name__)
 study_ai.usage_hook = db.log_usage  # every Gemini call's token counts go to the ai_usage table
@@ -330,15 +331,17 @@ def call_ai(what, fn, *args, **kwargs):
 def generate_more(note_id, generator, existing_of):
     """Shared code for "Generate more MCQs / flashcards".
 
-    Uses the saved PDF if there is one, otherwise the note's saved text.
-    The generator drops anything that repeats an existing item.
+    Sends the parts of the PDF's text that existing items cover least (the PDF itself only
+    if it has no text, the notes if there's no PDF). The generator drops repeats.
     """
     note = db.get_note(note_id)
     if note is None:
         raise HTTPException(404, "Note not found.")
+    existing = existing_of(note)
+    text = least_covered(source_text(note), existing, MORE_TEXT_CHARS)
     return note, call_ai(
         "generate more", generator, note["subject"], note["topic"], note["notes"],
-        existing=existing_of(note), pdf_path=note["pdf_path"], text=source_text(note),
+        existing=existing, pdf_path=note["pdf_path"], text=text,
     )
 
 

@@ -108,3 +108,19 @@ def test_practice_prompt_sends_only_question_stems(subject_id, monkeypatch):
         assert client.post(f"/subjects/{subject_id}/practice?n=5").status_code == 200
     assert "- Question on Sets?" in recorder.prompt
     assert '"options": ["a", "b"]' not in recorder.prompt
+
+
+# ---------- "Generate more": the least covered text ----------
+
+from context import least_covered  # noqa: E402
+
+
+def test_short_text_is_sent_whole():
+    assert least_covered(SETS_TEXT, ["What is a set?"], 10_000) == SETS_TEXT
+
+
+def test_long_text_keeps_the_uncovered_parts():
+    text = "\n".join([SETS_TEXT] * 3 + [GRAPH_TEXT])
+    picked = least_covered(text, ["What is a set?", "What is the union of two sets?"], 200)
+    assert "vertices" in picked and "union" not in picked
+    assert len(picked) <= 200
