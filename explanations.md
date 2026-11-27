@@ -314,10 +314,10 @@ shows 92%.
 - The legend and the weak / so-so / strong labels are gone. The colors speak for themselves.
 
 ## 28. Daily Revision: two buttons
-- **Bhool gaya** sends SM-2 quality 1 and **Yaad tha** sends quality 4. `srs.py` is unchanged.
+- **Forgot** sends SM-2 quality 1 and **Remembered** sends quality 4. `srs.py` is unchanged.
   It still works with any quality from 0 to 5, so going back to four buttons later only means changing the page.
-- Keys: Space flips, 1 = Bhool gaya, 2 = Yaad tha.
-- **Forgotten cards come back at the end of the session.** The first "Bhool gaya" is sent to the server
+- Keys: Space flips, 1 = Forgot, 2 = Remembered.
+- **Forgotten cards come back at the end of the session.** The first "Forgot" is sent to the server
   (the card's ease drops and it's due tomorrow). The card then goes to the back of the queue. That second
   showing is **practice only** and is not sent again. Original SM-2 works this way too: repeats inside a
   session don't change the schedule. Otherwise forgetting a card twice in one sitting would punish its ease twice.

@@ -46,8 +46,8 @@ Uploading the same PDF twice into one subject asks first. After every quiz and e
 Daily Revision session you get a report: score, the questions/cards you got wrong with the
 right answers, topics to revise, and **Practice mistakes again** (practice rounds aren't saved).
 
-In Daily Revision, click the card or press Space to flip it, then press **Bhool gaya**
-(forgot, key 1) or **Yaad tha** (remembered, key 2). Forgotten cards come back at the end of the
+In Daily Revision, click the card or press Space to flip it, then press **Forgot**
+(forgot, key 1) or **Remembered** (remembered, key 2). Forgotten cards come back at the end of the
 session. Cards are scheduled with the SM-2 spaced repetition algorithm (`srs.py`).
 In quizzes, keys 1-4 pick an option and Enter goes to the next question.
 See `explanations.md` for how everything works.
@@ -68,7 +68,7 @@ See `explanations.md` for how everything works.
 | POST   | `/attempts`   | Save one quiz answer (`note_id`, `question_index`, `chosen`) |
 | GET    | `/progress`   | Accuracy per subtopic, weakest first (optional `?subject=`) |
 | GET    | `/cards/due`  | Flashcards due today or earlier (optional `?subject=`) |
-| POST   | `/cards/{id}/review` | Review one card (`quality` 0-5; the page sends 1 = Bhool gaya, 4 = Yaad tha) |
+| POST   | `/cards/{id}/review` | Review one card (`quality` 0-5; the page sends 1 = Forgot, 4 = Remembered) |
 
 ## Renaming or merging subjects
 

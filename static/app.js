@@ -418,8 +418,8 @@ function showReport(container, r) {
 
 // ---------- Subject: Daily Revision tab ----------
 
-const FORGOT = 1;      // "Bhool gaya" -> SM-2 quality 1
-const REMEMBERED = 4;  // "Yaad tha"   -> SM-2 quality 4
+const FORGOT = 1;      // "Forgot"     -> SM-2 quality 1
+const REMEMBERED = 4;  // "Remembered" -> SM-2 quality 4
 
 async function renderRevisionTab(body, s) {
   const cards = await api(`/cards/due?subject=${encodeURIComponent(s.name)}`);
@@ -430,7 +430,7 @@ function days(n) {
   return plural(n, "day");
 }
 
-// Flashcard session. "Bhool gaya" cards come back at the end of the same session.
+// Flashcard session. "Forgot" cards come back at the end of the same session.
 // Those repeats (and practice rounds) are practice only: SM-2 already scheduled the
 // card on its first answer, so they are not sent to the server again.
 function runRevision(container, cards, opts) {
@@ -449,8 +449,8 @@ function runRevision(container, cards, opts) {
   const hint = el("p", { class: "fc-hint" }, "tap to flip · Space");
   const cardBox = el("div", { class: "flashcard", onclick: flip }, front, back, hint);
   const buttons = el("div", { class: "review-buttons", hidden: true },
-    el("button", { class: "forgot", onclick: () => answer(FORGOT) }, "Bhool gaya ", el("small", {}, "1")),
-    el("button", { class: "remembered", onclick: () => answer(REMEMBERED) }, "Yaad tha ", el("small", {}, "2")));
+    el("button", { class: "forgot", onclick: () => answer(FORGOT) }, "Forgot ", el("small", {}, "1")),
+    el("button", { class: "remembered", onclick: () => answer(REMEMBERED) }, "Remembered ", el("small", {}, "2")));
   const left = el("span", { class: "left-count" });
   const feedback = el("p", { class: "feedback", hidden: true });
 
@@ -508,7 +508,7 @@ function runRevision(container, cards, opts) {
     render();
   }
 
-  // Keys: Space flips, 1 = Bhool gaya, 2 = Yaad tha.
+  // Keys: Space flips, 1 = Forgot, 2 = Remembered.
   keyHandler = (event) => {
     if (event.code === "Space") {
       event.preventDefault();
