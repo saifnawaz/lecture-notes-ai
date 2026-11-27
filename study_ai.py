@@ -398,8 +398,7 @@ def validate_why(data):
 
 
 def notes_text(notes):
-    return "
-".join(f"- {n}" for n in notes) or "- (no notes saved)"
+    return "\n".join(f"- {n}" for n in notes) or "- (no notes saved)"
 
 
 def explain_topic(client, subject, subtopic, notes):
@@ -428,10 +427,8 @@ def generate_practice(client, subject, plan, notes, existing=()):
 
     prompt = PRACTICE_PROMPT.format(
         total=sum(n for _, n in plan),
-        plan="
-".join(f"- {topic}: {n}" for topic, n in plan),
-        existing="
-".join(f"- {e}" for e in existing) or "- (none yet)",
+        plan="\n".join(f"- {topic}: {n}" for topic, n in plan),
+        existing="\n".join(f"- {e}" for e in existing) or "- (none yet)",
         notes=notes_text(notes),
     )
     data = ask_with_fallback(client, [prompt], validate)
@@ -448,8 +445,7 @@ def why_wrong(client, question, options, chosen, answer):
     letter = "ABCDEFGH"
     prompt = WHY_PROMPT.format(
         question=question,
-        options="
-".join(f"{letter[i]}) {o}" for i, o in enumerate(options)),
+        options="\n".join(f"{letter[i]}) {o}" for i, o in enumerate(options)),
         chosen=f"{letter[chosen]}) {options[chosen]}",
         answer=f"{letter[answer]}) {options[answer]}",
     )
