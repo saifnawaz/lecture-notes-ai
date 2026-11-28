@@ -587,4 +587,5 @@ and the smaller text for generate more. Cached repeats of generate, explain and 
 
 ## 54. No disk writes in production
 - With Postgres, `/generate` keeps the PDF in memory: Gemini gets the bytes, the database gets the text. Nothing goes to `uploads/`.
-- `api/index.py` refuses to start without `DATABASE_URL` instead of creating a SQLite file on Vercel's read-only disk.
+- On Vercel (`VERCEL` env var) `app.py` refuses to start without `DATABASE_URL` instead of creating a SQLite file on the read-only disk.
+- Vercel's FastAPI preset serves `app` from `app.py` at the root; no rewrites. `GET /health` shows which database is in use.

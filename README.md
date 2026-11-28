@@ -136,9 +136,10 @@ to disk: uploaded PDFs are read in memory and only their text is stored.
    python migrate_to_postgres.py --with-progress  # the same, plus your own quiz answers and card schedule
    ```
    Then remove `DATABASE_URL` from that terminal (or close it), so local runs use SQLite again.
-3. **Vercel**: push the repo to GitHub, then on https://vercel.com click **Add New... > Project**, import
-   the repo and keep the defaults (Framework Preset: Other, no build command). `vercel.json` sends every
-   request to `api/index.py`, which serves both the API and `static/`.
+3. **Vercel**: push the repo to GitHub, then on https://vercel.com click **Add New... > Project** and import
+   the repo. Vercel detects FastAPI: keep **Framework Preset: FastAPI** and the default build settings.
+   It serves the `app` from `app.py` at the root; FastAPI itself serves the frontend from `static/`.
+   Python 3.12 comes from `.python-version`, the packages from `requirements.txt`. No `vercel.json` is needed.
 4. In the project's **Settings > Environment Variables**, add (for Production):
 
    | Name | Value |
@@ -149,11 +150,15 @@ to disk: uploaded PDFs are read in memory and only their text is stored.
    | `DATABASE_URL` | the Neon connection string |
    | `ADMIN_PASSCODE` | a long random passphrase (without it nobody can upload or edit) |
 
-5. **Deploy** (Deployments > Redeploy after adding the variables). Tables are created on the first request.
-6. Open the site, click **Admin** in the footer, enter the passcode and upload a PDF to check everything.
+5. **Deploy** (Deployments > Redeploy after adding the variables). Tables are created on the first request
+   after each cold start. Without `DATABASE_URL` the app refuses to start on Vercel (its disk is read-only).
+6. Open `https://<your-project>.vercel.app/health`. It should show `{"ok": true, "db": "postgres"}`;
+   `"sqlite"` means `DATABASE_URL` is missing, and status 503 with `"ok": false` means the database can't be reached.
+7. Open the site, click **Admin** in the footer, enter the passcode and upload a PDF to check everything.
 
-Limits to know: Vercel accepts request bodies up to 4.5 MB (hence the 4 MB PDF limit), and a request may
-run for up to 60 seconds (`maxDuration` in `vercel.json`); first-time generation of a long PDF can come close.
+Limits to know: Vercel accepts request bodies up to 4.5 MB (hence the 4 MB PDF limit), and a request can
+only run as long as your plan's function duration allows; first-time generation of a long PDF takes
+up to a minute.
 
 ## Run from the command line
 
@@ -168,7 +173,7 @@ python main.py --models
 - `app.py`: FastAPI server
 - `db.py`: storage, SQLite locally or Postgres when `DATABASE_URL` is set
 - `migrate_to_postgres.py`: copy the local `notes.db` into Postgres
-- `api/index.py`, `vercel.json`, `.vercelignore`: Vercel deployment
+- `.python-version`, `.vercelignore`: Vercel deployment (Vercel runs `app.py` with its FastAPI preset)
 - `srs.py`: SM-2 spaced repetition math
 - `quiz.py`: picks subject quiz questions, weak topics more often; plans AI practice
 - `context.py`: picks the notes and PDF text about given topics (keeps prompts small)
