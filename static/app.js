@@ -225,7 +225,7 @@ function todayBox(subjects, t) {
       el("span", {}, "Weakest topic"),
       w
         ? el("a", { class: "today-topic", href: w.subject_id ? explainHref({ id: w.subject_id }, w.subtopic) : "#/" },
-            el("b", {}, w.subtopic || "General"), el("span", { class: "num" }, `${w.accuracy}%`))
+            el("b", {}, w.subtopic || "General"), el("span", { class: "num muted" }, `${w.accuracy}%`))
         : el("span", { class: "muted" }, "No quiz answers yet")),
     el("div", { class: "today-row" },
       el("span", {}, "Last score"),
@@ -296,13 +296,20 @@ async function showSubject(id, tab, extra) {
   const subject = await api(`/subjects/${id}`);
   setBreadcrumb([{ label: subject.name, href: `#/s/${id}` }]);
 
-  const items = SUBJECT_TABS.map(([key, label]) => [
-    key,
-    key === "revision" && subject.due_today ? `${label} (${subject.due_today})` : label,
-    `#/s/${id}/${key}`,
+  const items = SUBJECT_TABS.map(([key, text]) => [
+    key, text, `#/s/${id}/${key}`, key === "revision" && subject.due_today ? subject.due_today : undefined,
   ]);
   const body = el("div", { class: "tab-body" });
-  app.replaceChildren(el("h2", { class: "page-title" }, subject.name), tabs(items, tab), body);
+  app.replaceChildren(
+    section("page-head",
+      el("div", { class: "page-head-grid" },
+        el("div", {}, label("Subject"), el("h1", { class: "h1" }, subject.name)),
+        el("div", { class: "grid-lined stats-3" },
+          stat(accuracyText(subject.accuracy), "Score"),
+          stat(subject.due_today, "Due"),
+          stat(subject.pdf_count, subject.pdf_count === 1 ? "PDF" : "PDFs"))),
+      tabs(items, tab === "explain" ? "progress" : tab)),
+    section("body", body));
 
   const renderers = {
     overview: renderOverview,
@@ -319,17 +326,34 @@ function explainHref(s, topic) {
   return `#/s/${s.id}/explain/${encodeURIComponent(topic)}`;
 }
 
+function practiceHref(s, topic) {
+  return `#/s/${s.id}/quiz/${encodeURIComponent(topic)}`;
+}
+
+// One topic row: name, bar, score, and Explain / Practice buttons.
+function topicRow(s, t) {
+  const name = t.subtopic || "General";
+  return el("div", { class: "topic-row" },
+    el("div", { class: "topic-name" }, el("b", {}, name),
+      el("small", { class: "muted num" }, `${t.correct}/${t.attempts} correct`)),
+    bar(t.accuracy),
+    el("span", { class: "num topic-pct" }, `${t.accuracy}%`),
+    el("div", { class: "btn-row" },
+      btn("secondary", "Explain", { href: explainHref(s, name), small: true }),
+      btn("secondary", "Practice", { href: practiceHref(s, name), small: true })));
+}
+
 function renderOverview(body, s) {
   const status = el("p", { class: "status" });
-  const practiceButton = el("button", { class: "secondary" }, "Practice weak topics");
+  const practiceButton = btn("secondary", "Practice weak topics");
   // Gemini writes new questions for the weakest topics; answers count toward progress.
   practiceButton.addEventListener("click", async () => {
     practiceButton.disabled = true;
     status.className = "status";
-    status.textContent = "Writing new questions for your weak topics... this can take a minute.";
+    status.textContent = "Writing new questions for your weak topics. This can take a minute.";
     try {
       const questions = await api(`/subjects/${s.id}/practice`, { method: "POST" });
-      runQuiz(body, questions, { title: "AI practice: weak topics", backHref: `#/s/${s.id}` });
+      runQuiz(body, questions, { title: "Practice: weak topics", backHref: `#/s/${s.id}` });
     } catch (err) {
       status.className = "status error";
       status.textContent = err.message;
@@ -337,27 +361,21 @@ function renderOverview(body, s) {
     }
   });
 
-  body.append(
-    el("div", { class: "stat-row" },
-      stat(accuracyText(s.accuracy), "quiz accuracy"),
-      stat(s.due_today, "cards due today", s.due_today ? "highlight" : ""),
-      stat(s.pdf_count, s.pdf_count === 1 ? "PDF" : "PDFs")),
-    s.due_today
-      ? el("a", { class: "button", href: `#/s/${s.id}/revision` }, `Start Daily Revision (${s.due_today})`)
-      : null,
-    s.pdf_count ? el("div", { class: "practice-box" }, practiceButton, status) : null,
-    el("h3", { class: "section-title" }, "Weakest topics"),
-    s.weakest.length
-      ? el("div", { class: "weak-list" }, s.weakest.map((t) => el("div", { class: "weak-item" },
-          el("div", {},
-            el("b", {}, t.subtopic),
-            el("small", {}, `${t.accuracy}% accuracy · ${t.correct} of ${t.attempts} correct`)),
-          el("div", { class: "row-actions" },
-            el("a", { class: "button secondary", href: explainHref(s, t.subtopic) }, "Explain"),
-            el("a", { class: "button secondary", href: `#/s/${s.id}/quiz/${encodeURIComponent(t.subtopic)}` },
-              "Practice")))))
-      : el("p", { class: "muted" }, "Take a quiz to find your weak topics."),
-  );
+  body.append(el("div", { class: "split" },
+    el("div", {},
+      label("Weakest topics"),
+      s.weakest.length
+        ? el("div", { class: "list-lined" }, s.weakest.map((t) => topicRow(s, t)))
+        : el("p", { class: "muted" }, "Take a quiz to find your weak topics.")),
+    el("aside", { class: "card next-step" },
+      label("Next step"),
+      el("p", {}, s.due_today
+        ? `${plural(s.due_today, "card")} due today.`
+        : s.pdf_count ? "No cards due. Practise the topics you miss most." : "Upload a lecture PDF to start."),
+      el("div", { class: "btn-col" },
+        s.due_today ? btn("primary", "Start Daily Revision", { href: `#/s/${s.id}/revision` }) : null,
+        s.pdf_count ? practiceButton : btn("primary", "Upload a PDF", { href: `#/s/${s.id}/pdfs` })),
+      status)));
 }
 
 // ---------- Subject: Explain a topic ----------
