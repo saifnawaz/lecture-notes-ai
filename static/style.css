@@ -292,7 +292,7 @@ a.subject-card:hover { background: var(--grey-1); }
 /* ================= Subject page ================= */
 .today-topic .num { color: var(--grey-3); }
 .page-head { padding-bottom: 0; }
-.page-head-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 26rem); gap: var(--s6);
+.page-head-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, max-content); gap: var(--s6);
   align-items: end; margin-bottom: var(--s6); }
 .page-head .h1 { overflow-wrap: anywhere; }
 .page-head .tabs { margin: 0 calc(-1 * var(--pad-x)); padding: 0 var(--pad-x); position: relative; top: 1px; }
@@ -508,3 +508,17 @@ a.subject-card:hover { background: var(--grey-1); }
   .notes li { padding: var(--s4); }
   .pdf-actions { margin-bottom: var(--s5); }
 }
+
+/* ================= Usage ================= */
+.usage-head { padding-bottom: var(--s6); }
+.usage-head .page-head-grid { margin-bottom: 0; }
+.table-wrap { overflow-x: auto; border: var(--line); background: var(--paper); }
+.usage { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.usage th, .usage td { padding: var(--s3) var(--s4); text-align: right; white-space: nowrap; }
+.usage th { font-size: 0.7rem; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--grey-3); border-bottom: var(--line); }
+.usage td { border-top: 1px solid var(--grey-1); }
+.usage th:first-child, .usage td:first-child { text-align: left; font-weight: 500; }
+.usage .share { width: 9rem; min-width: 6rem; }
+.share-track { height: 6px; background: var(--grey-1); }
+.share-track > div { height: 100%; background: var(--ink); }

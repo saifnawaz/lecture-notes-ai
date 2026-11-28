@@ -975,23 +975,29 @@ async function showUsage() {
   const rows = await api("/usage");
   const n = (value) => Number(value || 0).toLocaleString();
   const sum = (key) => rows.reduce((total, r) => total + r[key], 0);
+  const total = sum("tokens");
   app.replaceChildren(
-    el("h2", { class: "page-title" }, "Gemini token usage"),
-    el("div", { class: "stat-row" },
-      stat(n(sum("tokens_today")), "tokens today"),
-      stat(n(sum("tokens")), "tokens in total"),
-      stat(n(sum("calls")), "calls in total")),
-    rows.length
-      ? el("table", { class: "usage" },
-          el("thead", {}, el("tr", {},
-            ["Feature", "Calls today", "Tokens today", "Calls", "Tokens", "Avg / call",
-              "Avg prompt", "Avg output", "Avg thinking"].map((h) => el("th", {}, h)))),
-          el("tbody", {}, rows.map((r) => el("tr", {},
-            el("td", {}, r.feature),
-            [r.calls_today, r.tokens_today, r.calls, r.tokens, r.avg_total,
-              r.avg_prompt, r.avg_output, r.avg_thinking].map((v) => el("td", {}, n(v)))))))
-      : el("p", { class: "muted" }, "No Gemini calls yet."),
-    el("p", { class: "muted" }, "Every call counts, including retries. Answers served from a cache use no tokens."),
+    section("page-head usage-head",
+      el("div", { class: "page-head-grid" },
+        el("div", {}, label("Usage"), el("h1", { class: "h1" }, "Gemini tokens")),
+        el("div", { class: "grid-lined stats-3" },
+          stat(n(sum("tokens_today")), "Today"),
+          stat(n(total), "Total"),
+          stat(n(sum("calls")), "Calls")))),
+    section("body",
+      rows.length
+        ? el("div", { class: "table-wrap" }, el("table", { class: "usage" },
+            el("thead", {}, el("tr", {},
+              ["Feature", "Share", "Calls today", "Tokens today", "Calls", "Tokens", "Avg / call",
+                "Avg prompt", "Avg output", "Avg thinking"].map((h) => el("th", {}, h)))),
+            el("tbody", {}, rows.map((r) => el("tr", {},
+              el("td", {}, r.feature),
+              el("td", { class: "share" }, el("div", { class: "share-track" },
+                el("div", { style: `width: ${total ? (100 * r.tokens) / total : 0}%` }))),
+              [r.calls_today, r.tokens_today, r.calls, r.tokens, r.avg_total,
+                r.avg_prompt, r.avg_output, r.avg_thinking].map((v) => el("td", { class: "num" }, n(v))))))))
+        : el("p", { class: "muted" }, "No Gemini calls yet."),
+      el("p", { class: "muted spaced" }, "Every call counts, including retries. Answers served from the cache use no tokens.")),
   );
 }
 
