@@ -125,6 +125,21 @@ def list_subjects():
     return db.subject_summaries()
 
 
+@app.get("/today")
+def today_summary():
+    """Home page "Today" box: cards due, weakest topic overall, score on the last quiz day."""
+    subjects = db.subject_summaries()
+    ids = {s["name"].lower(): s["id"] for s in subjects}
+    weakest = next(iter(db.progress()), None)
+    if weakest:
+        weakest["subject_id"] = ids.get((weakest["subject"] or "").lower())
+    return {
+        "due": sum(s["due_today"] for s in subjects),
+        "weakest": weakest,
+        "last_score": db.last_score(),
+    }
+
+
 class NewSubject(BaseModel):
     name: str = Field(min_length=1, max_length=100)
 

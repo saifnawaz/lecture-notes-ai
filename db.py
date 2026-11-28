@@ -424,6 +424,19 @@ def progress(subject=None):
     return rows
 
 
+def last_score():
+    """Score on the most recent day with quiz answers, or None if there are none."""
+    with connect() as conn:
+        row = conn.execute(
+            """SELECT date(created_at, 'localtime') AS day, COUNT(*) AS attempts, SUM(correct) AS correct
+               FROM attempts
+               WHERE date(created_at, 'localtime') = (SELECT MAX(date(created_at, 'localtime')) FROM attempts)"""
+        ).fetchone()
+    if not row["attempts"]:
+        return None
+    return {**dict(row), "accuracy": round(100 * row["correct"] / row["attempts"])}
+
+
 def note_accuracy(note_id):
     """Accuracy on one note, or None if it has no attempts yet."""
     with connect() as conn:
