@@ -735,7 +735,7 @@ function runRevision(container, cards, opts) {
   const front = el("p", { class: "fc-front" });
   const back = el("p", { class: "fc-back" });
   const backBox = el("div", { class: "fc-back-box", hidden: true }, label("Answer"), back);
-  const hint = el("p", { class: "fc-hint" }, "Click the card or press ", el("span", { class: "num" }, "Space"), " to flip");
+  const hint = el("p", { class: "fc-hint" }, "Click the card to flip", el("span", { class: "keys-hint" }, " · or press ", el("span", { class: "num" }, "Space")));
   const cardBox = el("div", { class: "flashcard", onclick: flip },
     el("div", { class: "fc-front-box" }, label("Question"), front), backBox, hint);
   const buttons = el("div", { class: "review-buttons", hidden: true },

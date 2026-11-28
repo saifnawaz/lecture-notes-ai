@@ -477,4 +477,6 @@ a.subject-card:hover { background: var(--grey-1); }
 
 @media (max-width: 760px) {
   .flashcard { min-height: 18rem; padding: var(--s5); }
+  .review-buttons .btn { min-width: 0; padding: 0 var(--s4); }
+  .review-buttons .kbd, .keys-hint { display: none; }
 }
