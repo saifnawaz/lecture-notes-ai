@@ -528,3 +528,23 @@ a.subject-card:hover { background: var(--grey-1); }
 .usage .share { width: 9rem; min-width: 6rem; }
 .share-track { height: 6px; background: var(--grey-1); }
 .share-track > div { height: 100%; background: var(--ink); }
+
+/* ================= Demo: guest banner, admin controls ================= */
+.demo-banner { padding: var(--s2) var(--pad-x); border-bottom: var(--line); background: var(--paper);
+  font-size: 0.8rem; color: var(--grey-3); }
+.footer-right { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--s2) var(--s5); }
+.admin-slot { display: inline-flex; align-items: center; gap: var(--s3); font-size: 0.8rem; }
+.admin-slot:empty { display: none; }
+.footer-link { font-size: 0.8rem; font-weight: 500; text-decoration: underline; text-underline-offset: 3px; }
+.admin-on { font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.admin-form { display: flex; align-items: center; gap: var(--s2); }
+.admin-form input { min-height: 2.1rem; width: 9rem; padding: 0.3rem 0.6rem; font-size: 0.85rem; }
+input[type="password"] { border: var(--line); background: var(--paper); color: var(--ink); font-family: var(--font-body); }
+input[type="password"]:focus { outline: 2px solid var(--ink); outline-offset: -2px; }
+.head-actions { margin-top: var(--s4); }
+
+@media (max-width: 760px) {
+  .footer { flex-wrap: wrap; }
+  .footer-right { justify-content: flex-start; }
+  .footer-note { text-align: left; }
+}

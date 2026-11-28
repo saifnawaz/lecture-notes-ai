@@ -45,8 +45,73 @@ async function readJson(res) {
   return data;
 }
 
-async function api(path, options) {
-  return readJson(await fetch(path, options));
+async function api(path, options = {}) {
+  return readJson(await fetch(path, { ...options, headers: authHeaders(options.headers) }));
+}
+
+// ---------- Guest or admin ----------
+// Guests get a random id in an httpOnly cookie from the server. The admin types the passcode
+// once (footer > Admin); it stays in sessionStorage and goes with every request as a header.
+
+const PASSCODE_KEY = "lapse-admin-passcode";
+const MAX_PDF_MB = 4;
+let ME = { admin: false, passcode_set: false };
+
+function authHeaders(headers = {}) {
+  const code = sessionStorage.getItem(PASSCODE_KEY);
+  return code ? { ...headers, "X-Admin-Passcode": code } : headers;
+}
+
+async function loadMe() {
+  try {
+    ME = await api("/me");
+  } catch {
+    ME = { admin: false, passcode_set: false };
+  }
+  if (!ME.admin) sessionStorage.removeItem(PASSCODE_KEY); // wrong or changed passcode
+  document.getElementById("demo-banner").hidden = ME.admin;
+  renderAdminSlot();
+}
+
+// Footer: "Admin" opens a passcode field; when unlocked it shows "Admin · Sign out".
+function renderAdminSlot() {
+  const slot = document.getElementById("admin-slot");
+  if (!ME.passcode_set) return slot.replaceChildren();
+  if (ME.admin) {
+    slot.replaceChildren(el("span", { class: "admin-on" }, "Admin"),
+      el("a", { href: "#", class: "footer-link", onclick: signOut }, "Sign out"));
+    return;
+  }
+  const input = el("input", { type: "password", placeholder: "Passcode", "aria-label": "Admin passcode",
+    autocomplete: "current-password", required: true });
+  const error = el("span", { class: "error" });
+  const form = el("form", { class: "admin-form", hidden: true },
+    input, btn("primary", "Unlock", { type: "submit", small: true }), error);
+  const link = el("a", { href: "#", class: "footer-link", onclick: (event) => {
+    event.preventDefault();
+    link.hidden = true;
+    form.hidden = false;
+    input.focus();
+  } }, "Admin");
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const res = await fetch("/admin/check", { method: "POST", headers: { "X-Admin-Passcode": input.value } });
+    if (!res.ok) {
+      error.textContent = "Wrong passcode.";
+      return;
+    }
+    sessionStorage.setItem(PASSCODE_KEY, input.value);
+    await loadMe();
+    route();
+  });
+  slot.replaceChildren(link, form);
+}
+
+async function signOut(event) {
+  event.preventDefault();
+  sessionStorage.removeItem(PASSCODE_KEY);
+  await loadMe();
+  route();
 }
 
 function postJson(path, body) {
@@ -212,8 +277,9 @@ async function showHome() {
         el("span", { class: "muted num" }, plural(subjects.length, "subject"))),
       el("div", { class: "grid-lined subject-grid" },
         subjects.map(subjectCard),
-        newSubjectCard()),
-      subjects.length ? null : el("p", { class: "muted spaced" }, "Create your first subject, then upload PDFs into it.")),
+        ME.admin ? newSubjectCard() : null),
+      subjects.length ? null : el("p", { class: "muted spaced" },
+        ME.admin ? "Create your first subject, then upload PDFs into it." : "No subjects yet.")),
   );
 }
 
@@ -311,7 +377,9 @@ async function showSubject(id, tab, extra) {
   app.replaceChildren(
     section("page-head",
       el("div", { class: "page-head-grid" },
-        el("div", {}, label("Subject"), el("h1", { class: "h1" }, subject.name)),
+        el("div", {}, label("Subject"), el("h1", { class: "h1" }, subject.name),
+          ME.admin ? el("div", { class: "head-actions" },
+            btn("secondary", "Rename", { small: true, onclick: () => renameSubject(subject) })) : null),
         el("div", { class: "grid-lined stats-3" },
           stat(accuracyText(subject.accuracy), "Score"),
           stat(subject.due_today, "Due"),
@@ -328,6 +396,23 @@ async function showSubject(id, tab, extra) {
     explain: renderExplain,
   };
   await (renderers[tab] || renderOverview)(body, subject, extra);
+}
+
+// Admin: rename a subject (to an existing name = merge the two).
+async function renameSubject(subject) {
+  const name = (prompt("New name for this subject:", subject.name) || "").trim();
+  if (!name || name === subject.name) return;
+  try {
+    const renamed = await api(`/subjects/${subject.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    if (location.hash === `#/s/${renamed.id}`) route();
+    else location.hash = `#/s/${renamed.id}`;
+  } catch (err) {
+    alert(err.message);
+  }
 }
 
 function explainHref(s, topic) {
@@ -379,10 +464,11 @@ function renderOverview(body, s) {
       label("Next step"),
       el("p", {}, s.due_today
         ? `${plural(s.due_today, "card")} due today.`
-        : s.pdf_count ? "No cards due. Practice the topics you miss most." : "Upload a lecture PDF to start."),
+        : s.pdf_count ? "No cards due. Practice the topics you miss most."
+          : ME.admin ? "Upload a lecture PDF to start." : "No PDFs in this subject yet."),
       el("div", { class: "btn-col" },
         s.due_today ? btn("primary", "Start Daily Revision", { href: `#/s/${s.id}/revision` }) : null,
-        s.pdf_count ? practiceButton : btn("primary", "Upload a PDF", { href: `#/s/${s.id}/pdfs` })),
+        s.pdf_count ? practiceButton : ME.admin ? btn("primary", "Upload a PDF", { href: `#/s/${s.id}/pdfs` }) : null),
       status)));
 }
 
@@ -426,7 +512,7 @@ async function renderExplain(body, s, topic) {
     el("div", { class: "section-head explain-head" },
       el("div", {}, label("Explain"), el("h2", { class: "h2" }, topic)),
       el("div", { class: "btn-row" },
-        regen,
+        ME.admin ? regen : null,
         btn("primary", "Practice this topic", { href: practiceHref(s, topic), small: true }))),
     status,
     content);
@@ -451,8 +537,9 @@ async function renderPdfs(body, s) {
                 [n.filename, new Date(n.created_at).toLocaleDateString()].filter(Boolean).join(" · "))),
             el("span", { class: "num pdf-row-counts" }, `${plural(n.mcq_count, "MCQ")} · ${plural(n.card_count, "card")}`),
             icon("chevron"))))
-        : el("p", { class: "muted" }, "No PDFs yet. Upload one to get notes, a quiz and flashcards.")),
-    uploadForm(s)));
+        : el("p", { class: "muted" },
+            ME.admin ? "No PDFs yet. Upload one to get notes, a quiz and flashcards." : "No PDFs in this subject yet.")),
+    ME.admin ? uploadForm(s) : null));
 }
 
 // Upload a PDF into this subject. If the same file is already here, ask first.
@@ -466,7 +553,7 @@ function uploadForm(s) {
     form.append("file", file.files[0]);
     form.append("subject", s.name); // subject is set automatically
     if (force) form.append("force", "true");
-    const res = await fetch("/generate", { method: "POST", body: form });
+    const res = await fetch("/generate", { method: "POST", body: form, headers: authHeaders() });
     if (res.status === 409) {
       const data = await res.json();
       if (!confirm(`${data.detail}\n\nGenerate notes from it again anyway?`)) return null;
@@ -478,6 +565,12 @@ function uploadForm(s) {
   const form = el("form", { class: "upload-form" }, file, button);
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const size = file.files[0] ? file.files[0].size / (1024 * 1024) : 0;
+    if (size > MAX_PDF_MB) {
+      status.className = "status error";
+      status.textContent = `This PDF is ${(Math.ceil(size * 10) / 10).toFixed(1)} MB. The limit is ${MAX_PDF_MB} MB.`;
+      return;
+    }
     button.disabled = true;
     status.className = "status";
     status.textContent = "Reading the PDF and writing notes. This can take a minute.";
@@ -548,7 +641,8 @@ function pad2(n) {
 // opts: {title, backHref, practice}. Practice rounds don't save attempts.
 function runQuiz(container, questions, opts) {
   if (!questions.length) {
-    container.replaceChildren(el("p", { class: "muted" }, "No questions yet. Upload a PDF or generate more MCQs."));
+    container.replaceChildren(el("p", { class: "muted" },
+      ME.admin ? "No questions yet. Upload a PDF or generate more MCQs." : "No questions here yet."));
     return;
   }
   const results = []; // {q, chosen, correct}
@@ -909,14 +1003,14 @@ async function showPdf(sid, nid, tab) {
           stat(acc ? `${acc.accuracy}%` : "–", "Score"),
           stat(note.mcqs.length, "MCQs"),
           stat(note.card_count, "Cards"))),
-      el("div", { class: "pdf-actions" },
+      ME.admin ? el("div", { class: "pdf-actions" },
         el("div", { class: "btn-row" },
           generateButton("More MCQs", `/notes/${nid}/mcqs`, (r) =>
             r.added ? `Added ${plural(r.added, "new MCQ")}.` : "No new MCQs this time (all were repeats). Try again."),
           generateButton("More flashcards", `/notes/${nid}/flashcards`, (r) =>
             r.added ? `Added ${plural(r.added, "new flashcard")}.` : "No new flashcards this time (all were repeats). Try again."),
           deleteButton),
-        status),
+        status) : null,
       tabs(PDF_TABS.map(([key, text]) => [
         key, text, `#/s/${sid}/pdf/${nid}/${key}`,
         key === "quiz" ? note.mcqs.length : key === "flashcards" ? note.card_count : undefined,
@@ -953,7 +1047,8 @@ function renderNotes(body, note, base) {
 async function renderNoteCards(body, nid) {
   const cards = await api(`/notes/${nid}/cards`);
   if (!cards.length) {
-    body.append(el("p", { class: "muted" }, "No flashcards yet. Click \"More flashcards\" above."));
+    body.append(el("p", { class: "muted" },
+      ME.admin ? "No flashcards yet. Click \"More flashcards\" above." : "No flashcards for this PDF yet."));
     return;
   }
   // Local "YYYY-MM-DD" (toISOString would give the UTC date, which can be a day off).
@@ -1002,4 +1097,4 @@ async function showUsage() {
 }
 
 // ---------- Start ----------
-route();
+loadMe().then(route);
