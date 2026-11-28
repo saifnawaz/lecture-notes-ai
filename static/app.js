@@ -61,19 +61,78 @@ function plural(n, word) {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
 
-// A big number with a small label under it.
-function stat(value, label, cls = "") {
-  return el("div", { class: `stat ${cls}` }, el("b", {}, value), el("small", {}, label));
+// Line icons (paths from Lucide, ISC licence), drawn with stroke 1.5 by the CSS.
+const ICONS = {
+  chevron: '<path d="m9 18 6-6-6-6"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/>',
+  trash: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',
+  file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8"/><path d="M16 17H8"/>',
+  refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+  back: '<path d="m15 18-6-6 6-6"/>',
+};
+
+function icon(name) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("class", "icon");
+  svg.setAttribute("aria-hidden", "true");
+  svg.innerHTML = ICONS[name]; // fixed strings above, never user text
+  return svg;
+}
+
+// Buttons: primary = solid black with ">" chevron, secondary = white outline.
+// Pass href to get a link that looks like a button.
+function btn(kind, label, attrs = {}, iconName = kind === "primary" ? "chevron" : null) {
+  const cls = `btn btn-${kind}${attrs.small ? " btn-sm" : ""}`;
+  const { small, href, ...rest } = attrs;
+  const parts = iconName === "chevron" ? [label, icon("chevron")] : [iconName ? icon(iconName) : null, label];
+  return href ? el("a", { ...rest, href, class: cls }, parts) : el("button", { type: "button", ...rest, class: cls }, parts);
+}
+
+// A horizontal band of the page, split from the next band by a full-width line.
+function section(cls, ...children) {
+  return el("section", { class: `section ${cls || ""}` }, children);
+}
+
+function label(text) {
+  return el("span", { class: "label" }, text);
+}
+
+// Our pixel motif: a 4x3 block of squares (k = black, g = grey, l = light, . = empty).
+function pixels(pattern = "k..g.kl.l.gk") {
+  const map = { k: "k", g: "g", l: "l", ".": "" };
+  return el("span", { class: "pixels", "aria-hidden": "true" }, [...pattern].map((c) => el("i", { class: map[c] })));
+}
+
+// A big mono number with a small label above it.
+function stat(value, text, cls = "") {
+  return el("div", { class: `stat ${cls}` }, label(text), el("span", { class: "num" }, value));
 }
 
 function accuracyText(accuracy) {
   return accuracy === null || accuracy === undefined ? "–" : `${accuracy}%`;
 }
 
-// Tab bar: items are [key, label, href].
+// Bar color depends only on how full it is.
+function barColor(pct) {
+  if (pct < 25) return "low";
+  if (pct > 75) return "high";
+  return "mid";
+}
+
+function bar(pct) {
+  return el("div", { class: "bar-track" },
+    pct === null || pct === undefined ? null : el("div", { class: `bar ${barColor(pct)}`, style: `width: ${pct}%` }));
+}
+
+// Tab bar of bordered boxes: items are [key, label, href, count?].
 function tabs(items, active) {
   return el("nav", { class: "tabs" },
-    items.map(([key, label, href]) => el("a", { href, class: key === active ? "active" : "" }, label)));
+    items.map(([key, text, href, count]) => el("a", { href, class: key === active ? "active" : "" },
+      text, count === undefined ? null : el("span", { class: "num" }, count))));
 }
 
 // Only one keyboard handler is active at a time (the current quiz or revision session).
@@ -86,12 +145,12 @@ document.addEventListener("keydown", (event) => {
 // ---------- Breadcrumb: Home > Subject > PDF ----------
 
 function setBreadcrumb(items) {
-  const crumbs = [{ label: "Home", href: "#/" }, ...items];
+  const crumbs = items.length ? [{ label: "Subjects", href: "#/" }, ...items] : [];
   const nav = document.getElementById("breadcrumb");
   nav.replaceChildren(...crumbs.flatMap((c, i) => {
     const last = i === crumbs.length - 1;
     const node = last ? el("span", { class: "current" }, c.label) : el("a", { href: c.href }, c.label);
-    return i === 0 ? [node] : [el("span", { class: "sep" }, "›"), node];
+    return i === 0 ? [node] : [el("span", { class: "sep" }, icon("chevron")), node];
   }));
 }
 
@@ -112,9 +171,10 @@ async function route() {
     }
   } catch (err) {
     setBreadcrumb([]);
-    app.replaceChildren(el("div", { class: "card" },
-      el("p", { class: "error" }, err.message),
-      el("a", { href: "#/" }, "Back to home")));
+    app.replaceChildren(section("",
+      label("Error"),
+      el("p", { class: "error lede" }, err.message),
+      el("div", { class: "btn-row spaced" }, btn("secondary", "Back to subjects", { href: "#/" }, "back"))));
   }
 }
 
@@ -124,33 +184,84 @@ window.addEventListener("hashchange", route);
 
 async function showHome() {
   setBreadcrumb([]);
-  const subjects = await api("/subjects");
+  const [subjects, today] = await Promise.all([api("/subjects"), api("/today")]);
   app.replaceChildren(
-    el("h2", { class: "page-title" }, "Subjects"),
-    el("div", { class: "subject-grid" },
-      subjects.map((s) => el("a", { class: "subject-card", href: `#/s/${s.id}` },
-        el("h3", {}, s.name),
-        el("div", { class: "stats" },
-          stat(s.pdf_count, s.pdf_count === 1 ? "PDF" : "PDFs"),
-          stat(s.due_today, "due today", s.due_today ? "highlight" : ""),
-          stat(accuracyText(s.accuracy), "accuracy")))),
-      newSubjectCard()),
+    section("hero",
+      el("div", { class: "hero-text" },
+        label("Lecture revision"),
+        el("div", { class: "hero-title" },
+          el("h1", { class: "display" },
+            el("span", { class: "line" }, "Read it once."),
+            el("span", { class: "line" }, "Fix what slips.")),
+          pixels()),
+        el("p", { class: "lede" },
+          "Upload a lecture PDF. Get notes, MCQs and flashcards. See what you keep getting wrong.")),
+      todayBox(subjects, today)),
+    section("subjects",
+      label("Subjects"),
+      el("div", { class: "section-head" },
+        el("h2", { class: "h2" }, "Your subjects"),
+        el("span", { class: "muted num" }, plural(subjects.length, "subject"))),
+      el("div", { class: "grid-lined subject-grid" },
+        subjects.map(subjectCard),
+        newSubjectCard()),
+      subjects.length ? null : el("p", { class: "muted spaced" }, "Create your first subject, then upload PDFs into it.")),
   );
-  if (!subjects.length) {
-    app.append(el("p", { class: "muted" }, "Create your first subject, then upload PDFs into it."));
-  }
 }
 
-// "+ New subject" card that turns into a small form.
+// "Today" box: cards due across all subjects, weakest topic, score on the last quiz day.
+function todayBox(subjects, t) {
+  const target = [...subjects].sort((a, b) => b.due_today - a.due_today)[0];
+  const w = t.weakest;
+  const last = t.last_score;
+  return el("aside", { class: "today" },
+    el("div", { class: "today-head" },
+      el("span", { class: "label" }, "Today"),
+      el("span", { class: "label num" }, new Date().toLocaleDateString(undefined, { day: "numeric", month: "short" }))),
+    el("div", { class: "today-row" },
+      el("span", {}, "Cards due"),
+      el("span", { class: "num big" }, t.due)),
+    el("div", { class: "today-row" },
+      el("span", {}, "Weakest topic"),
+      w
+        ? el("a", { class: "today-topic", href: w.subject_id ? explainHref({ id: w.subject_id }, w.subtopic) : "#/" },
+            el("b", {}, w.subtopic || "General"), el("span", { class: "num" }, `${w.accuracy}%`))
+        : el("span", { class: "muted" }, "No quiz answers yet")),
+    el("div", { class: "today-row" },
+      el("span", {}, "Last score"),
+      last
+        ? el("span", { class: "today-score" },
+            el("span", { class: "num big" }, `${last.accuracy}%`),
+            el("small", { class: "muted num" }, `${last.correct}/${last.attempts}`))
+        : el("span", { class: "muted" }, "–")),
+    t.due && target
+      ? btn("primary", "Start revision", { href: `#/s/${target.id}/revision` })
+      : el("p", { class: "muted today-empty" }, "Nothing due today."));
+}
+
+function subjectCard(s) {
+  return el("a", { class: "subject-card", href: `#/s/${s.id}` },
+    el("div", { class: "subject-card-top" },
+      el("h3", { class: "h3" }, s.name),
+      icon("chevron")),
+    el("dl", { class: "mini-stats" },
+      el("div", {}, el("dt", {}, "PDFs"), el("dd", { class: "num" }, s.pdf_count)),
+      el("div", {}, el("dt", {}, "Due"), el("dd", { class: "num" }, s.due_today)),
+      el("div", {}, el("dt", {}, "Score"), el("dd", { class: "num" }, accuracyText(s.accuracy)))),
+    bar(s.accuracy));
+}
+
+// "New subject" cell that turns into a small form.
 function newSubjectCard() {
   const input = el("input", { type: "text", placeholder: "Subject name", maxlength: 100, required: true });
   const error = el("p", { class: "error" });
-  const button = el("button", { class: "subject-card add" }, "+ New subject");
+  const button = el("button", { type: "button", class: "subject-card add" }, icon("plus"), "New subject");
   const form = el("form", { class: "subject-card new-subject", hidden: true },
+    label("New subject"),
     input,
-    el("div", { class: "row" },
-      el("button", { type: "submit" }, "Create"),
-      el("button", { type: "button", class: "secondary", onclick: () => toggle(false) }, "Cancel")),
+    el("div", { class: "btn-row" },
+      btn("primary", "Create", { type: "submit", small: true }),
+      btn("secondary", "Cancel", { small: true, onclick: () => toggle(false) })),
     error);
 
   function toggle(open) {
@@ -637,13 +748,6 @@ function finishRevision(container, results, opts) {
 }
 
 // ---------- Subject: Progress tab ----------
-
-// Bar color depends only on how full it is.
-function barColor(pct) {
-  if (pct < 25) return "low";
-  if (pct > 75) return "high";
-  return "mid";
-}
 
 async function renderProgress(body, s) {
   const rows = await api(`/progress?subject=${encodeURIComponent(s.name)}`); // sorted weakest first by the server
