@@ -480,3 +480,10 @@ a.subject-card:hover { background: var(--grey-1); }
   .review-buttons .btn { min-width: 0; padding: 0 var(--s4); }
   .review-buttons .kbd, .keys-hint { display: none; }
 }
+
+/* ================= Progress ================= */
+.progress-head { align-items: flex-end; flex-wrap: wrap; }
+.progress-head .label { margin-bottom: var(--s2); }
+.legend { display: flex; flex-wrap: wrap; gap: var(--s4); font-size: 0.78rem; color: var(--grey-3); }
+.legend-item { display: inline-flex; align-items: center; gap: var(--s2); }
+.legend-item i { display: inline-block; width: 14px; height: 8px; }

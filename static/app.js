@@ -832,19 +832,19 @@ function finishRevision(container, results, opts) {
 async function renderProgress(body, s) {
   const rows = await api(`/progress?subject=${encodeURIComponent(s.name)}`); // sorted weakest first by the server
   if (!rows.length) {
-    body.append(el("p", { class: "muted" }, "No quiz answers yet. Take a quiz to see your progress."));
+    body.append(el("div", { class: "empty" },
+      label("Progress"),
+      el("h2", { class: "h2" }, "No answers yet."),
+      el("p", { class: "muted" }, "Take a quiz and each topic shows up here with its score."),
+      el("div", { class: "btn-row spaced" }, btn("primary", "Start a quiz", { href: `#/s/${s.id}/quiz` }))));
     return;
   }
-  body.append(el("div", { class: "progress-list" }, rows.map((r) => {
-    const pct = r.accuracy; // raw correct / attempts, already rounded
-    return el("div", { class: "progress-row" },
-      el("div", { class: "progress-name" }, r.subtopic || "General"),
-      el("div", { class: "bar-track" }, el("div", { class: `bar ${barColor(pct)}`, style: `width: ${pct}%` })),
-      el("div", { class: "progress-stats" },
-        el("b", {}, `${pct}%`),
-        el("small", {}, `${r.correct} of ${r.attempts} correct`)),
-      el("a", { class: "button secondary small", href: explainHref(s, r.subtopic || "General") }, "Explain"));
-  })));
+  const key = (cls, text) => el("span", { class: "legend-item" }, el("i", { class: `bar ${cls}` }), text);
+  body.append(
+    el("div", { class: "section-head progress-head" },
+      el("div", {}, label("Progress"), el("h2", { class: "h2" }, "Topics, weakest first")),
+      el("div", { class: "legend num" }, key("low", "under 25%"), key("mid", "25-75%"), key("high", "over 75%"))),
+    el("div", { class: "list-lined" }, rows.map((r) => topicRow(s, r))));
 }
 
 // ---------- PDF page: Notes | Quiz | Flashcards ----------
