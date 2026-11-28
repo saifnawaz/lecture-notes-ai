@@ -379,7 +379,7 @@ function renderOverview(body, s) {
       label("Next step"),
       el("p", {}, s.due_today
         ? `${plural(s.due_today, "card")} due today.`
-        : s.pdf_count ? "No cards due. Practise the topics you miss most." : "Upload a lecture PDF to start."),
+        : s.pdf_count ? "No cards due. Practice the topics you miss most." : "Upload a lecture PDF to start."),
       el("div", { class: "btn-col" },
         s.due_today ? btn("primary", "Start Daily Revision", { href: `#/s/${s.id}/revision` }) : null,
         s.pdf_count ? practiceButton : btn("primary", "Upload a PDF", { href: `#/s/${s.id}/pdfs` })),
