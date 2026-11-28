@@ -7,6 +7,7 @@ Case-insensitive matching uses LOWER(a) = LOWER(b), which works on both.
 Shared demo content: subjects, notes (with MCQs), cards, explanations, why_wrong, ai_cache.
 Per-user data (user_id = a guest's cookie id, or OWNER): attempts, card_state, ai_quota.
 """
+import atexit
 import json
 import os
 import sqlite3
@@ -71,6 +72,7 @@ def pool():
             kwargs={"row_factory": dict_row, "prepare_threshold": None},
         )
         _pool_url = DATABASE_URL
+        atexit.register(_pool.close)  # close cleanly at exit instead of in the garbage collector
     return _pool
 
 
