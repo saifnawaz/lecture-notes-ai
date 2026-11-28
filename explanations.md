@@ -557,3 +557,11 @@ and the smaller text for generate more. Cached repeats of generate, explain and 
   500 characters of text per page on average, because extracted text would miss too much. Otherwise it sends the text.
 - The chosen path is printed: "First generate: sending the PDF, it has embedded images." or "...sending extracted text (1543 characters per page, no images)."
 - Either way the extracted text (if at least 100 characters per page) is stored, so later features still don't resend the PDF.
+
+# UI
+
+## 50. Monochrome design system
+- `static/style.css` starts with variables (colours, fonts, spacing, 1px line) and shared classes: `.btn-primary`, `.btn-secondary`, `.card`, `.tabs`, `.label`, `.grid-lined`, `.list-lined`, `.bar`.
+- Colour is used only for progress bars and right/wrong answers (muted red, amber, green). Everything else is black lines on off-white, sharp corners, no shadows.
+- Fonts: Archivo expanded for headings, Instrument Sans for text, IBM Plex Mono for numbers.
+- `GET /today` feeds the home "Today" box; the last score is the accuracy on the most recent day with quiz answers.

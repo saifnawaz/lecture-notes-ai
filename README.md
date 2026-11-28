@@ -71,6 +71,7 @@ See `explanations.md` for how everything works.
 | POST   | `/why`        | Why a wrong answer is wrong (`note_id`, `question_index`, `chosen`; saved) |
 | GET    | `/progress`   | Accuracy per subtopic, weakest first (optional `?subject=`) |
 | GET    | `/usage`      | Gemini tokens per feature: today, total, average per call |
+| GET    | `/today`      | Home "Today" box: cards due, weakest topic overall, score on the last quiz day |
 | GET    | `/cards/due`  | Flashcards due today or earlier (optional `?subject=`) |
 | POST   | `/cards/{id}/review` | Review one card (`quality` 0-5; the page sends 1 = Forgot, 4 = Remembered) |
 
