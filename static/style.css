@@ -334,3 +334,24 @@ a.subject-card:hover { background: var(--grey-1); }
   .pdf-row { grid-template-columns: auto minmax(0, 1fr) auto; padding: var(--s4); }
   .pdf-row-counts { grid-column: 2; grid-row: 2; }
 }
+
+/* ================= Explain ================= */
+.explain-head { align-items: flex-end; flex-wrap: wrap; }
+.explain-head .label { margin-bottom: var(--s2); }
+.explain { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: var(--s5) var(--s6); align-items: start; }
+.explain-text { grid-column: 1; grid-row: 1; max-width: 40rem; font-size: 1.05rem; line-height: 1.65; }
+.explain-text p + p { margin-top: var(--s4); }
+.worked .problem { font-weight: 500; margin-bottom: var(--s3); }
+.worked .solution { white-space: pre-line; font-family: var(--font-mono); font-size: 0.9rem; line-height: 1.6;
+  padding-top: var(--s3); border-top: 1px solid var(--grey-1); }
+.key-points ol { margin: 0; padding: 0; list-style: none; }
+.key-points li { display: flex; gap: var(--s4); padding: var(--s3) var(--s5); }
+.key-points li .num { color: var(--grey-3); font-size: 0.85rem; padding-top: 0.1rem; }
+.explain .worked { grid-column: 2; grid-row: 1; }
+.explain .key-points { grid-column: 2; grid-row: 2; }
+.saved { grid-column: 1; grid-row: 2; font-size: 0.8rem; }
+
+@media (max-width: 760px) {
+  .explain { grid-template-columns: 1fr; }
+  .explain > * { grid-column: auto !important; grid-row: auto !important; }
+}

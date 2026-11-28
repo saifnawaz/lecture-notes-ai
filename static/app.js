@@ -385,27 +385,27 @@ function renderOverview(body, s) {
 async function renderExplain(body, s, topic) {
   const status = el("p", { class: "status" });
   const content = el("div", { class: "explain" });
-  const regen = el("button", { class: "secondary", onclick: () => load(true) }, "Regenerate");
+  const regen = btn("secondary", "Regenerate", { small: true, onclick: () => load(true) }, "refresh");
 
   async function load(regenerate) {
     regen.disabled = true;
     status.className = "status";
-    status.textContent = regenerate
-      ? "Writing a new explanation..."
-      : "Asking the AI tutor... this can take a few seconds.";
+    status.textContent = regenerate ? "Writing a new explanation." : "Writing an explanation. This takes a few seconds.";
     try {
       const path = `/subjects/${s.id}/topics/${encodeURIComponent(topic)}/explain`;
       const e = await api(regenerate ? `${path}?regenerate=true` : path, { method: "POST" });
       status.textContent = "";
       content.replaceChildren(
-        ...e.explanation.map((text) => el("p", {}, text)),
-        el("h4", {}, "Worked example"),
-        el("div", { class: "worked" },
+        el("div", { class: "explain-text" }, e.explanation.map((text) => el("p", {}, text))),
+        el("div", { class: "card worked" },
+          label("Worked example"),
           el("p", { class: "problem" }, e.example.problem),
           el("p", { class: "solution" }, e.example.solution)),
-        el("h4", {}, "3 key points to remember"),
-        el("ul", { class: "key-points" }, e.key_points.map((text) => el("li", {}, text))),
-        el("p", { class: "muted" }, `Saved ${new Date(e.created_at).toLocaleString()}`));
+        el("div", { class: "key-points" },
+          label("Remember"),
+          el("ol", { class: "list-lined" }, e.key_points.map((text, i) =>
+            el("li", {}, el("span", { class: "num" }, String(i + 1).padStart(2, "0")), el("span", {}, text))))),
+        el("p", { class: "muted saved" }, `Saved ${new Date(e.created_at).toLocaleString()}`));
     } catch (err) {
       status.className = "status error";
       status.textContent = err.message;
@@ -415,11 +415,11 @@ async function renderExplain(body, s, topic) {
   }
 
   body.append(
-    el("div", { class: "explain-head" },
-      el("h3", {}, topic),
-      el("div", { class: "row-actions" },
+    el("div", { class: "section-head explain-head" },
+      el("div", {}, label("Explain"), el("h2", { class: "h2" }, topic)),
+      el("div", { class: "btn-row" },
         regen,
-        el("a", { class: "button secondary", href: `#/s/${s.id}/quiz/${encodeURIComponent(topic)}` }, "Practice"))),
+        btn("primary", "Practice this topic", { href: practiceHref(s, topic), small: true }))),
     status,
     content);
   await load(false);
