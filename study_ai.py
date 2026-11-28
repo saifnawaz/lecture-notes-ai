@@ -48,6 +48,9 @@ usage_hook = None
 # them at the ai_cache table; without them nothing is cached.
 cache_get = None
 cache_put = None
+# Called as before_call(feature) right before a real Gemini request (never for a cached answer).
+# app.py uses it for the demo's daily limits; it may raise to stop the call.
+before_call = None
 
 # Prompts are kept short: each rule once, and one-line JSON shapes.
 MCQ = ('{"question": str, "options": [4 str], "answer": index 0-3 of the correct option, '
@@ -273,6 +276,8 @@ def ask_with_fallback(client, contents, validate, feature="generate"):
     A bad answer (broken JSON or wrong shape) is retried.
     A file error stops right away. Raises GenerationError if everything fails.
     """
+    if before_call is not None:
+        before_call(feature)
     for model in models_for(feature):
         for attempt in range(1, RETRIES + 1):
             try:
@@ -335,6 +340,8 @@ def from_cache(feature, request, validate):
 
 def upload_file(client, file_path, content=None):
     """Upload a file to Gemini: the given bytes if we have them, else read file_path."""
+    if before_call is not None:
+        before_call("upload")
     file_path = Path(file_path)
     try:
         if content is None:

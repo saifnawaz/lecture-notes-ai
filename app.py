@@ -2,6 +2,7 @@
 
 Run with:  uvicorn app:app --reload
 """
+import contextvars
 import hashlib
 import hmac
 import logging
@@ -30,9 +31,44 @@ MAX_UPLOAD_MB = 4  # Vercel accepts request bodies up to 4.5 MB
 UPLOAD_DIR = Path("uploads")  # saved PDFs (local only), named by their SHA-256 hash
 MORE_TEXT_CHARS = 9000  # "Generate more" sends at most this much PDF text (about 3k tokens)
 GENERIC_ERROR = "Something went wrong while talking to the AI. Please try again."
+
+# Daily limits on NEW AI answers (saved/cached answers are free and unlimited). The admin has none.
+GUEST_DAILY_AI_CALLS = 10
+TOTAL_DAILY_AI_CALLS = 200
+GUEST_LIMIT_MESSAGE = ("You've used today's 10 new AI answers in this demo. "
+                       "Saved explanations and answers still work. Try again tomorrow.")
+DEMO_LIMIT_MESSAGE = ("The demo has used all of today's new AI answers. "
+                      "Saved explanations and answers still work. Try again tomorrow.")
 log = logging.getLogger(__name__)
 study_ai.usage_hook = db.log_usage  # every Gemini call's token counts go to the ai_usage table
 study_ai.cache_get, study_ai.cache_put = db.cache_get, db.cache_put  # identical requests: no new call
+
+
+class QuotaExceeded(Exception):
+    pass
+
+
+# Who the current AI action is for: {"user": user_id, "counted": bool}, set by call_ai().
+ai_caller = contextvars.ContextVar("ai_caller", default=None)
+
+
+def spend_ai_call(feature):
+    """study_ai.before_call: runs right before a real Gemini request.
+
+    One user action counts once, however many retries or uploads it needs.
+    """
+    caller = ai_caller.get()
+    if caller is None or caller["counted"] or caller["user"] in (None, db.OWNER):
+        return
+    if db.ai_calls_today() >= TOTAL_DAILY_AI_CALLS:
+        raise QuotaExceeded(DEMO_LIMIT_MESSAGE)
+    if db.ai_calls_today(caller["user"]) >= GUEST_DAILY_AI_CALLS:
+        raise QuotaExceeded(GUEST_LIMIT_MESSAGE)
+    db.count_ai_call(caller["user"])
+    caller["counted"] = True
+
+
+study_ai.before_call = spend_ai_call
 
 
 @asynccontextmanager
@@ -304,7 +340,8 @@ def stems_about(questions, subtopic):
 
 
 @app.post("/subjects/{subject_id}/topics/{subtopic:path}/explain")
-def explain(request: Request, subject_id: int, subtopic: str, regenerate: bool = False):
+def explain(request: Request, subject_id: int, subtopic: str, regenerate: bool = False,
+            uid: str = Depends(current_user)):
     """Explain one subtopic from the subject's notes. Saved and shared, so the next time is instant.
 
     ?regenerate=true (admin only) asks Gemini again and replaces the saved explanation.
@@ -321,7 +358,8 @@ def explain(request: Request, subject_id: int, subtopic: str, regenerate: bool =
             return {"subtopic": subtopic, **saved, "cached": True}
     questions = db.subject_questions(subject["name"])
     bullets, chunks = topic_context(subject["name"], [(subtopic, stems_about(questions, subtopic))])
-    data = call_ai("explain", explain_topic, subject["name"], subtopic, bullets, chunks, fresh=regenerate)
+    data = call_ai("explain", explain_topic, subject["name"], subtopic, bullets, chunks,
+                   fresh=regenerate, user=uid)
     db.save_explanation(subject["name"], subtopic, data)
     return {"subtopic": subtopic, **db.get_explanation(subject["name"], subtopic), "cached": False}
 
@@ -352,7 +390,7 @@ def practice(subject_id: int, n: int = Query(8, ge=5, le=10), uid: str = Depends
     wanted = {topic.casefold() for topic, _ in plan}
     existing = [q["question"] for q in questions if q["subtopic"].casefold() in wanted]  # stems only
     bullets, chunks = topic_context(subject["name"], [(t, stems_about(questions, t)) for t, _ in plan])
-    mcqs = call_ai("practice", generate_practice, subject["name"], plan, bullets, existing, chunks)
+    mcqs = call_ai("practice", generate_practice, subject["name"], plan, bullets, existing, chunks, user=uid)
 
     # Which note each topic's new questions go to.
     home = {}
@@ -381,7 +419,7 @@ class WhyRequest(BaseModel):
 
 
 @app.post("/why")
-def why(body: WhyRequest):
+def why(body: WhyRequest, uid: str = Depends(current_user)):
     """Why was my answer wrong? Saved per (question, chosen option)."""
     note = db.get_note(body.note_id)
     if note is None:
@@ -396,7 +434,7 @@ def why(body: WhyRequest):
     saved = db.get_why(body.note_id, body.question_index, body.chosen)
     if saved:
         return {"why": saved, "cached": True}
-    text = call_ai("why wrong", why_wrong, q["question"], q["options"], body.chosen, q["answer"])
+    text = call_ai("why wrong", why_wrong, q["question"], q["options"], body.chosen, q["answer"], user=uid)
     db.save_why(body.note_id, body.question_index, body.chosen, text)
     return {"why": text, "cached": False}
 
@@ -432,16 +470,24 @@ def delete_note(note_id: int):
     return {"deleted": note_id}
 
 
-def call_ai(what, fn, *args, **kwargs):
-    """Run a Gemini call; any failure becomes a 502 with a readable message."""
+def call_ai(what, fn, *args, user=None, **kwargs):
+    """Run a Gemini call for this user (None or OWNER = no daily limit).
+
+    Over the limit gives a 429; any other failure a 502, both with a readable message.
+    """
+    token = ai_caller.set({"user": user, "counted": False})
     try:
         return fn(make_client(), *args, **kwargs)
+    except QuotaExceeded as e:
+        raise HTTPException(429, str(e))
     except GenerationError as e:
         raise HTTPException(502, str(e))
     except Exception:
         # Anything unexpected (network, Gemini SDK, ...) still gets a readable message.
         log.exception("%s failed", what)
         raise HTTPException(502, GENERIC_ERROR)
+    finally:
+        ai_caller.reset(token)
 
 
 def generate_more(note_id, generator, existing_of):
