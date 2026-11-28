@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import logging
 import os
+import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -88,6 +89,26 @@ def is_admin(request: Request):
     return hmac.compare_digest(given.encode(), passcode.encode())
 
 
+def require_admin(request: Request):
+    """Dependency for upload, generate more, delete, create/rename subject and Regenerate."""
+    if not is_admin(request):
+        if request.headers.get("x-admin-passcode"):
+            time.sleep(1)  # a wrong passcode: slow down guessing
+        raise HTTPException(403, "This needs the admin passcode.")
+
+
+@app.get("/me")
+def me(request: Request):
+    """What the page should show: admin controls, or the guest view with the demo banner."""
+    return {"admin": is_admin(request), "passcode_set": bool(os.getenv("ADMIN_PASSCODE"))}
+
+
+@app.post("/admin/check", dependencies=[Depends(require_admin)])
+def admin_check():
+    """The footer's Admin form calls this to test a passcode before saving it."""
+    return {"admin": True}
+
+
 def current_user(request: Request):
     """user_id for per-user data: the admin's own progress is OWNER, everyone else is their guest id."""
     return db.OWNER if is_admin(request) else request.state.guest_id
@@ -105,7 +126,7 @@ def remove_pdf_if_unused(pdf_path):
         Path(pdf_path).unlink(missing_ok=True)
 
 
-@app.post("/generate")
+@app.post("/generate", dependencies=[Depends(require_admin)])
 def generate_notes(
     file: UploadFile = File(...),
     subject: str = Form(""),
@@ -208,12 +229,24 @@ class NewSubject(BaseModel):
     name: str = Field(min_length=1, max_length=100)
 
 
-@app.post("/subjects")
+@app.post("/subjects", dependencies=[Depends(require_admin)])
 def create_subject(body: NewSubject):
     """Create a subject. If one with the same name (any case) exists, return that one."""
     if not body.name.strip():
         raise HTTPException(400, "Subject name can't be empty.")
     return db.get_subject(db.create_subject(body.name))
+
+
+@app.patch("/subjects/{subject_id}", dependencies=[Depends(require_admin)])
+def rename_subject(subject_id: int, body: NewSubject, uid: str = Depends(current_user)):
+    """Rename a subject; renaming to an existing subject's name merges the two."""
+    subject = db.get_subject(subject_id)
+    if subject is None:
+        raise HTTPException(404, "Subject not found.")
+    if not body.name.strip():
+        raise HTTPException(400, "Subject name can't be empty.")
+    db.rename_subject(subject["name"], body.name)
+    return db.get_subject(db.create_subject(body.name), uid)
 
 
 @app.get("/subjects/{subject_id}")
@@ -271,11 +304,13 @@ def stems_about(questions, subtopic):
 
 
 @app.post("/subjects/{subject_id}/topics/{subtopic:path}/explain")
-def explain(subject_id: int, subtopic: str, regenerate: bool = False):
-    """Explain one subtopic from the subject's notes. Saved, so the next time is instant.
+def explain(request: Request, subject_id: int, subtopic: str, regenerate: bool = False):
+    """Explain one subtopic from the subject's notes. Saved and shared, so the next time is instant.
 
-    ?regenerate=true asks Gemini again and replaces the saved explanation.
+    ?regenerate=true (admin only) asks Gemini again and replaces the saved explanation.
     """
+    if regenerate:
+        require_admin(request)
     subject = subject_or_404(subject_id)
     subtopic = subtopic.strip()
     if not subtopic:
@@ -387,7 +422,7 @@ def get_note(note_id: int, uid: str = Depends(current_user)):
     return public_note(note)
 
 
-@app.delete("/notes/{note_id}")
+@app.delete("/notes/{note_id}", dependencies=[Depends(require_admin)])
 def delete_note(note_id: int):
     """Delete a note together with its quiz attempts, flashcards and saved PDF."""
     deleted = db.delete_note(note_id)
@@ -426,7 +461,7 @@ def generate_more(note_id, generator, existing_of):
     )
 
 
-@app.post("/notes/{note_id}/flashcards")
+@app.post("/notes/{note_id}/flashcards", dependencies=[Depends(require_admin)])
 def make_flashcards(note_id: int):
     """Add new flashcards to a note (old ones are kept, duplicates skipped)."""
     note, cards = generate_more(
@@ -438,7 +473,7 @@ def make_flashcards(note_id: int):
     return {"added": total - before, "card_count": total}
 
 
-@app.post("/notes/{note_id}/mcqs")
+@app.post("/notes/{note_id}/mcqs", dependencies=[Depends(require_admin)])
 def make_mcqs(note_id: int):
     """Add new MCQs to a note (old ones are kept, duplicates skipped)."""
     note, mcqs = generate_more(note_id, generate_mcqs, lambda n: [q["question"] for q in n["mcqs"]])
