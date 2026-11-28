@@ -302,7 +302,7 @@ a.subject-card:hover { background: var(--grey-1); }
 .next-step p { margin-bottom: var(--s5); }
 .btn-col { display: flex; flex-direction: column; gap: var(--s3); }
 .btn-col .btn { justify-content: space-between; }
-.btn-col .btn:has(> .icon:first-child) { justify-content: flex-start; }
+.btn-col .btn:has(> .icon.lead) { justify-content: flex-start; }
 
 .topic-row { display: grid; grid-template-columns: minmax(130px, 1.1fr) minmax(80px, 1.3fr) 3.5rem auto;
   gap: var(--s4); align-items: center; padding: var(--s4) var(--s5); }
@@ -314,6 +314,7 @@ a.subject-card:hover { background: var(--grey-1); }
   .page-head-grid { grid-template-columns: 1fr; gap: var(--s5); margin-bottom: var(--s5); }
   .split { grid-template-columns: 1fr; }
   .split > aside { order: -1; }
+  .split.content-first > aside { order: 0; }
   .topic-row { grid-template-columns: 1fr auto; gap: var(--s2) var(--s3); padding: var(--s4); }
   .topic-row .bar-track { grid-column: 1 / -1; grid-row: 2; }
   .topic-row .btn-row { grid-column: 1 / -1; }
@@ -487,3 +488,23 @@ a.subject-card:hover { background: var(--grey-1); }
 .legend { display: flex; flex-wrap: wrap; gap: var(--s4); font-size: 0.78rem; color: var(--grey-3); }
 .legend-item { display: inline-flex; align-items: center; gap: var(--s2); }
 .legend-item i { display: inline-block; width: 14px; height: 8px; }
+
+/* ================= PDF page ================= */
+.pdf-meta { margin-top: var(--s3); font-size: 0.82rem; }
+.pdf-actions { margin-bottom: var(--s6); }
+.notes { margin: 0; padding: 0; list-style: none; }
+.notes li { display: flex; gap: var(--s4); padding: var(--s4) var(--s5); line-height: 1.55; }
+.notes li .num { flex: none; color: var(--grey-3); font-size: 0.85rem; padding-top: 0.15rem; }
+.next-line { margin-bottom: var(--s5); }
+.card-list { grid-template-columns: repeat(3, 1fr); }
+.card-item { display: flex; flex-direction: column; gap: var(--s2); padding: var(--s5); }
+.card-item b { font-weight: 500; }
+.card-item p { color: var(--grey-3); }
+.card-item small { margin-top: auto; padding-top: var(--s3); font-size: 0.78rem; color: var(--grey-3); }
+
+@media (max-width: 1000px) { .card-list { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 760px) {
+  .card-list { grid-template-columns: 1fr; }
+  .notes li { padding: var(--s4); }
+  .pdf-actions { margin-bottom: var(--s5); }
+}

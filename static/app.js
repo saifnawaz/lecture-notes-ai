@@ -88,7 +88,9 @@ function icon(name) {
 function btn(kind, label, attrs = {}, iconName = kind === "primary" ? "chevron" : null) {
   const cls = `btn btn-${kind}${attrs.small ? " btn-sm" : ""}`;
   const { small, href, ...rest } = attrs;
-  const parts = iconName === "chevron" ? [label, icon("chevron")] : [iconName ? icon(iconName) : null, label];
+  const lead = iconName && iconName !== "chevron" ? icon(iconName) : null;
+  if (lead) lead.classList.add("lead");
+  const parts = iconName === "chevron" ? [label, icon("chevron")] : [lead, label];
   return href ? el("a", { ...rest, href, class: cls }, parts) : el("button", { type: "button", ...rest, class: cls }, parts);
 }
 
@@ -861,12 +863,12 @@ async function showPdf(sid, nid, tab) {
   const buttons = [];
 
   // "Generate more" buttons: show progress, then redraw the page with the result.
-  function generateButton(label, path, describe) {
-    const button = el("button", { class: "secondary" }, label);
+  function generateButton(text, path, describe) {
+    const button = btn("secondary", text, { small: true }, "plus");
     button.addEventListener("click", async () => {
       buttons.forEach((b) => (b.disabled = true));
       status.className = "status";
-      status.textContent = "Generating... this can take a minute.";
+      status.textContent = "Writing new ones from the PDF. This can take a minute.";
       try {
         flashMessage = describe(await api(path, { method: "POST" }));
         await route();
@@ -880,7 +882,7 @@ async function showPdf(sid, nid, tab) {
     return button;
   }
 
-  const deleteButton = el("button", { class: "danger" }, "Delete PDF");
+  const deleteButton = btn("secondary", "Delete PDF", { small: true }, "trash");
   deleteButton.addEventListener("click", async () => {
     if (!confirm("Delete this PDF? Its notes, quiz history and flashcards will also be deleted.")) return;
     try {
@@ -893,25 +895,33 @@ async function showPdf(sid, nid, tab) {
   });
   buttons.push(deleteButton);
 
+  const acc = note.accuracy;
   const body = el("div", { class: "tab-body" });
   app.replaceChildren(
-    el("div", { class: "pdf-head" },
-      el("div", {},
-        el("h2", { class: "page-title" }, note.topic || "Untitled"),
-        el("p", { class: "muted" },
-          [note.filename, new Date(note.created_at).toLocaleDateString()].filter(Boolean).join(" · "))),
-      el("div", { class: "actions" },
-        generateButton("Generate more MCQs", `/notes/${nid}/mcqs`, (r) =>
-          r.added ? `Added ${plural(r.added, "new MCQ")}.` : "No new MCQs this time (all were repeats). Try again."),
-        generateButton("Generate more flashcards", `/notes/${nid}/flashcards`, (r) =>
-          r.added ? `Added ${plural(r.added, "new flashcard")}.` : "No new flashcards this time (all were repeats). Try again."),
-        deleteButton)),
-    status,
-    tabs(PDF_TABS.map(([key, label]) => {
-      const count = key === "quiz" ? ` (${note.mcqs.length})` : key === "flashcards" ? ` (${note.card_count})` : "";
-      return [key, label + count, `#/s/${sid}/pdf/${nid}/${key}`];
-    }), tab),
-    body,
+    section("page-head",
+      el("div", { class: "page-head-grid" },
+        el("div", {},
+          label(`PDF · ${subject.name}`),
+          el("h1", { class: "h1" }, note.topic || "Untitled"),
+          el("p", { class: "muted num pdf-meta" },
+            [note.filename, new Date(note.created_at).toLocaleDateString()].filter(Boolean).join(" · "))),
+        el("div", { class: "grid-lined stats-3" },
+          stat(acc ? `${acc.accuracy}%` : "–", "Score"),
+          stat(note.mcqs.length, "MCQs"),
+          stat(note.card_count, "Cards"))),
+      el("div", { class: "pdf-actions" },
+        el("div", { class: "btn-row" },
+          generateButton("More MCQs", `/notes/${nid}/mcqs`, (r) =>
+            r.added ? `Added ${plural(r.added, "new MCQ")}.` : "No new MCQs this time (all were repeats). Try again."),
+          generateButton("More flashcards", `/notes/${nid}/flashcards`, (r) =>
+            r.added ? `Added ${plural(r.added, "new flashcard")}.` : "No new flashcards this time (all were repeats). Try again."),
+          deleteButton),
+        status),
+      tabs(PDF_TABS.map(([key, text]) => [
+        key, text, `#/s/${sid}/pdf/${nid}/${key}`,
+        key === "quiz" ? note.mcqs.length : key === "flashcards" ? note.card_count : undefined,
+      ]), tab)),
+    section("body", body),
   );
 
   if (tab === "quiz") {
@@ -922,34 +932,40 @@ async function showPdf(sid, nid, tab) {
   } else if (tab === "flashcards") {
     await renderNoteCards(body, nid);
   } else {
-    renderNotes(body, note);
+    renderNotes(body, note, `#/s/${sid}/pdf/${nid}`);
   }
 }
 
-function renderNotes(body, note) {
-  const acc = note.accuracy;
-  body.append(
-    acc ? el("p", { class: "accuracy" }, `Your quiz accuracy: ${acc.accuracy}% (${acc.correct} of ${acc.attempts})`) : null,
-    el("ul", { class: "notes" }, note.notes.map((text) => el("li", {}, text))),
-  );
+function renderNotes(body, note, base) {
+  body.append(el("div", { class: "split content-first" },
+    el("div", {},
+      label("Notes"),
+      el("ol", { class: "notes list-lined" }, note.notes.map((text, i) =>
+        el("li", {}, el("span", { class: "num" }, pad2(i + 1)), el("span", {}, text))))),
+    el("aside", { class: "card" },
+      label("Study this PDF"),
+      el("p", { class: "muted next-line" }, `${plural(note.mcqs.length, "question")} and ${plural(note.card_count, "flashcard")} from this lecture.`),
+      el("div", { class: "btn-col" },
+        btn("primary", "Take the quiz", { href: `${base}/quiz` }),
+        btn("secondary", "Browse flashcards", { href: `${base}/flashcards` })))));
 }
 
 async function renderNoteCards(body, nid) {
   const cards = await api(`/notes/${nid}/cards`);
   if (!cards.length) {
-    body.append(el("p", { class: "muted" }, "No flashcards yet. Click \"Generate more flashcards\"."));
+    body.append(el("p", { class: "muted" }, "No flashcards yet. Click \"More flashcards\" above."));
     return;
   }
   // Local "YYYY-MM-DD" (toISOString would give the UTC date, which can be a day off).
   const now = new Date();
   const today = [now.getFullYear(), now.getMonth() + 1, now.getDate()]
     .map((n) => String(n).padStart(2, "0")).join("-");
-  body.append(el("div", { class: "card-list" }, cards.map((c) => el("div", { class: "card-item" },
+  body.append(el("div", { class: "grid-lined card-list" }, cards.map((c) => el("div", { class: "card-item" },
     el("b", {}, c.front),
     el("p", {}, c.back),
-    el("small", {}, c.due_date <= today
-      ? "due now"
-      : `next review: ${new Date(`${c.due_date}T00:00`).toLocaleDateString()}`)))));
+    el("small", { class: "num" }, c.due_date <= today
+      ? "Due now"
+      : `Next: ${new Date(`${c.due_date}T00:00`).toLocaleDateString()}`)))));
 }
 
 // ---------- Usage: Gemini tokens per feature ----------
