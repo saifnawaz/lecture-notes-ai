@@ -1,10 +1,9 @@
-google-genai
-python-dotenv
-fastapi
-uvicorn
-python-multipart
-pypdf
-
-# testing
-pytest
-httpx
+# Production (Vercel installs this file)
+fastapi==0.165.0
+uvicorn==0.54.0
+python-multipart==0.0.34
+python-dotenv==1.2.4
+google-genai==3.6.1
+pypdf==7.2.0
+psycopg[binary]==3.3.9
+psycopg-pool==3.3.3
