@@ -37,7 +37,7 @@ async def lifespan(app):
     yield
 
 
-app = FastAPI(title="Lecture Notes AI", lifespan=lifespan)
+app = FastAPI(title="Lapse", lifespan=lifespan)
 
 
 def remove_pdf_if_unused(pdf_path):

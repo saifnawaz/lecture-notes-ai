@@ -1,5 +1,7 @@
 # Explanations
 
+Lapse: notes on how it was built.
+
 Short notes on each important step of turning the CLI into a web app.
 
 ## 1. Ignore the database file

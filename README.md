@@ -1,4 +1,4 @@
-# Lecture Notes AI
+# Lapse
 
 Organise lecture PDFs by subject and get study notes, quizzes and flashcards, generated with Google Gemini.
 Works as a web app (FastAPI) or from the command line.
