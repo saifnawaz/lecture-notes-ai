@@ -130,9 +130,15 @@ function bar(pct) {
 
 // Tab bar of bordered boxes: items are [key, label, href, count?].
 function tabs(items, active) {
-  return el("nav", { class: "tabs" },
+  const nav = el("nav", { class: "tabs" },
     items.map(([key, text, href, count]) => el("a", { href, class: key === active ? "active" : "" },
       text, count === undefined ? null : el("span", { class: "num" }, count))));
+  // On narrow screens the bar scrolls sideways: keep the active tab in view.
+  requestAnimationFrame(() => {
+    const a = nav.querySelector(".active");
+    if (a && nav.scrollWidth > nav.clientWidth) nav.scrollLeft = a.offsetLeft - 24;
+  });
+  return nav;
 }
 
 // Only one keyboard handler is active at a time (the current quiz or revision session).
@@ -714,8 +720,11 @@ function days(n) {
 // card on its first answer, so they are not sent to the server again.
 function runRevision(container, cards, opts) {
   if (!cards.length) {
-    container.replaceChildren(el("p", { class: "done" }, "All done for today."),
-      el("p", { class: "muted" }, "No cards are due in this subject."));
+    container.replaceChildren(el("div", { class: "empty" },
+      label(opts.practice ? "Practice" : "Daily Revision"),
+      el("h2", { class: "h2" }, "All done for today."),
+      el("p", { class: "muted" }, "No cards are due in this subject. New ones come back on their review day."),
+      el("div", { class: "btn-row spaced" }, btn("secondary", "Back to subject", { href: opts.backHref }, "back"))));
     return;
   }
   const queue = cards.map((card) => ({ card, repeat: Boolean(opts.practice), nextDays: null }));
@@ -724,26 +733,29 @@ function runRevision(container, cards, opts) {
   let busy = false;
 
   const front = el("p", { class: "fc-front" });
-  const back = el("p", { class: "fc-back", hidden: true });
-  const hint = el("p", { class: "fc-hint" }, "tap to flip · Space");
-  const cardBox = el("div", { class: "flashcard", onclick: flip }, front, back, hint);
+  const back = el("p", { class: "fc-back" });
+  const backBox = el("div", { class: "fc-back-box", hidden: true }, label("Answer"), back);
+  const hint = el("p", { class: "fc-hint" }, "Click the card or press ", el("span", { class: "num" }, "Space"), " to flip");
+  const cardBox = el("div", { class: "flashcard", onclick: flip },
+    el("div", { class: "fc-front-box" }, label("Question"), front), backBox, hint);
   const buttons = el("div", { class: "review-buttons", hidden: true },
-    el("button", { class: "forgot", onclick: () => answer(FORGOT) }, "Forgot ", el("small", {}, "1")),
-    el("button", { class: "remembered", onclick: () => answer(REMEMBERED) }, "Remembered ", el("small", {}, "2")));
-  const left = el("span", { class: "left-count" });
+    btn("secondary", "Forgot", { onclick: () => answer(FORGOT) }, null),
+    btn("primary", "Remembered", { onclick: () => answer(REMEMBERED) }));
+  buttons.firstChild.append(el("span", { class: "kbd" }, "1"));
+  buttons.lastChild.insertBefore(el("span", { class: "kbd" }, "2"), buttons.lastChild.lastChild);
+  const head = el("div");
   const feedback = el("p", { class: "feedback", hidden: true });
 
-  container.replaceChildren(el("div", { class: "session revision" },
-    el("div", { class: "session-head" }, el("span", {}, opts.practice ? "Practice mistakes" : "Daily Revision"), left),
-    cardBox, buttons, feedback));
+  container.replaceChildren(el("div", { class: "session revision" }, head, cardBox, buttons, feedback));
 
   function render() {
     if (!queue.length) return finishRevision(container, [...firstAnswer.values()], opts);
-    left.textContent = `${queue.length} left`;
+    head.replaceChildren(sessionHead(opts.practice ? "Practice mistakes" : "Daily Revision",
+      firstAnswer.size, cards.length, `${queue.length} left`));
     flipped = false;
     front.textContent = queue[0].card.front;
     back.textContent = queue[0].card.back;
-    back.hidden = true;
+    backBox.hidden = true;
     hint.hidden = false;
     cardBox.classList.remove("flipped");
     buttons.hidden = true;
@@ -752,12 +764,11 @@ function runRevision(container, cards, opts) {
   function flip() {
     if (flipped || !queue.length) return;
     flipped = true;
-    back.hidden = false;
+    backBox.hidden = false;
     hint.hidden = true;
     cardBox.classList.add("flipped");
     buttons.hidden = false;
   }
-
   async function answer(quality) {
     if (!flipped || busy) return;
     busy = true;

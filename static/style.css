@@ -442,3 +442,39 @@ a.subject-card:hover { background: var(--grey-1); }
   .mistakes li { padding: var(--s4); }
   .report-head .pixels { grid-template-columns: repeat(4, 8px); grid-auto-rows: 8px; }
 }
+
+/* ================= Daily Revision: flashcards ================= */
+.empty .h2 { margin-bottom: var(--s3); }
+.revision { max-width: 44rem; margin: 0 auto; }
+.flashcard {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--s5);
+  min-height: 22rem;
+  padding: var(--s6);
+  border: var(--line);
+  background: var(--paper);
+  text-align: center;
+  cursor: pointer;
+  transition: background-color var(--ease);
+}
+.flashcard.flipped { cursor: default; }
+.flashcard .label { margin-bottom: var(--s3); }
+.fc-front { font-family: var(--font-head); font-weight: 800; font-stretch: 125%; letter-spacing: -0.02em;
+  font-size: clamp(1.25rem, 2.6vw, 1.75rem); line-height: 1.15; }
+.fc-back-box { padding-top: var(--s5); border-top: var(--line); animation: fade 150ms ease; }
+.fc-back { font-size: 1.15rem; line-height: 1.5; }
+.fc-hint { font-size: 0.82rem; color: var(--grey-3); }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+
+.review-buttons { display: grid; grid-template-columns: 1fr 1fr; margin-top: -1px; }
+.review-buttons .btn { min-height: 3.5rem; justify-content: space-between; font-size: 1rem; padding: 0 var(--s5); }
+.review-buttons .btn + .btn { margin-left: -1px; }
+.review-buttons .btn .kbd { margin-left: auto; }
+.feedback { margin-top: var(--s4); color: var(--grey-3); font-size: 0.88rem; font-family: var(--font-mono); }
+.feedback.error { color: var(--red); font-family: var(--font-body); }
+
+@media (max-width: 760px) {
+  .flashcard { min-height: 18rem; padding: var(--s5); }
+}
