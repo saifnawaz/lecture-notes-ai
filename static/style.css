@@ -31,6 +31,7 @@
   --s8: 4.5rem;
   --pad-x: 3.5rem;     /* inner page padding, smaller on mobile */
   --ease: 150ms ease;
+  --frame-gap: 48px;   /* empty space below the closed frame */
 }
 
 * { box-sizing: border-box; border-radius: 0; }
@@ -39,7 +40,7 @@
 html { background: var(--bg); }
 body {
   margin: 0;
-  padding: var(--s6) var(--s6) 0;
+  padding: var(--s6) var(--s6) var(--frame-gap);
   background: var(--bg);
   color: var(--ink);
   font-family: var(--font-body);
@@ -51,14 +52,14 @@ p { margin: 0; }
 svg.icon { width: 1.1em; height: 1.1em; flex: none; stroke: currentColor; stroke-width: 1.5;
   fill: none; stroke-linecap: square; stroke-linejoin: miter; vertical-align: -0.15em; }
 
-/* ---------- Page frame: vertical side lines, bordered header bar ---------- */
+/* ---------- Page frame: closed box with header bar and footer ----------
+   The frame is at least one screen tall (minus the space above and below it);
+   main grows to fill it, so on short pages the footer sits at the screen bottom. */
 .frame {
   max-width: 1280px;
-  min-height: calc(100vh - var(--s6));
+  min-height: calc(100vh - var(--s6) - var(--frame-gap));
   margin: 0 auto;
-  border-left: var(--line);
-  border-right: var(--line);
-  border-top: var(--line);
+  border: var(--line);
   display: flex;
   flex-direction: column;
 }
@@ -87,7 +88,12 @@ svg.icon { width: 1.1em; height: 1.1em; flex: none; stroke: currentColor; stroke
 .topnav a { display: inline-flex; align-items: center; gap: 0.4rem; }
 .topnav a:hover { text-decoration: underline; text-underline-offset: 3px; }
 
-main { flex: 1; }
+main { flex: 1 0 auto; }
+
+.footer { display: flex; justify-content: space-between; align-items: center; gap: var(--s4);
+  min-height: 3.5rem; padding: var(--s3) var(--pad-x); border-top: var(--line); }
+.footer .brand-name { font-size: 0.95rem; }
+.footer-note { font-size: 0.8rem; color: var(--grey-3); text-align: right; }
 
 /* A horizontal band of the page. Bands are split by full-width rules. */
 .section { padding: var(--s7) var(--pad-x); }
@@ -217,8 +223,8 @@ input[type="file"]::file-selector-button {
 /* ---------- Mobile: one column ---------- */
 @media (max-width: 760px) {
   :root { --pad-x: 1.25rem; }
-  body { padding: var(--s3) var(--s3) 0; }
-  .frame { min-height: calc(100vh - var(--s3)); }
+  body { padding: var(--s3) var(--s3) var(--frame-gap); }
+  .frame { min-height: calc(100vh - var(--s3) - var(--frame-gap)); }
   .topbar { flex-wrap: wrap; gap: var(--s2) var(--s3); padding-top: var(--s3); padding-bottom: var(--s3); }
   .topbar .breadcrumb { order: 3; width: 100%; font-size: 0.8rem; }
   .topbar .breadcrumb:empty { display: none; }
