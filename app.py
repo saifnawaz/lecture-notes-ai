@@ -25,8 +25,8 @@ from study_ai import (
     generate_practice, make_client, read_pdf, shuffle_options, text_for_first_generate, why_wrong,
 )
 
-MAX_UPLOAD_MB = 20
-UPLOAD_DIR = Path("uploads")  # saved PDFs, named by their SHA-256 hash
+MAX_UPLOAD_MB = 4  # Vercel accepts request bodies up to 4.5 MB
+UPLOAD_DIR = Path("uploads")  # saved PDFs (local only), named by their SHA-256 hash
 MORE_TEXT_CHARS = 9000  # "Generate more" sends at most this much PDF text (about 3k tokens)
 GENERIC_ERROR = "Something went wrong while talking to the AI. Please try again."
 log = logging.getLogger(__name__)
@@ -93,6 +93,12 @@ def current_user(request: Request):
     return db.OWNER if is_admin(request) else request.state.guest_id
 
 
+def saves_pdfs():
+    """Locally the PDF is kept in uploads/. In production (Postgres, read-only disk on Vercel)
+    nothing is written to files: only the PDF's extracted text is stored, in the database."""
+    return not db.is_postgres()
+
+
 def remove_pdf_if_unused(pdf_path):
     """Delete a saved PDF unless another note still uses it (same file = same hash)."""
     if pdf_path and db.count_notes_with_pdf(pdf_path) == 0:
@@ -113,7 +119,8 @@ def generate_notes(
     if not content:
         raise HTTPException(400, "The uploaded file is empty")
     if len(content) > MAX_UPLOAD_MB * 1024 * 1024:
-        raise HTTPException(400, f"PDF is larger than {MAX_UPLOAD_MB} MB.")
+        size = -(-len(content) * 10 // (1024 * 1024)) / 10  # rounded up: 4.01 MB shows as 4.1
+        raise HTTPException(413, f"This PDF is {size:.1f} MB. The limit is {MAX_UPLOAD_MB} MB.")
 
     # Same bytes = same hash, so this finds the same PDF even if it was renamed.
     pdf_hash = hashlib.sha256(content).hexdigest()
@@ -126,19 +133,23 @@ def generate_notes(
                 "duplicate_of": existing["id"],
             })
 
-    # Keep the PDF (named by its hash) so we can make more questions from it later.
-    UPLOAD_DIR.mkdir(exist_ok=True)
-    pdf_path = (UPLOAD_DIR / f"{pdf_hash}.pdf").as_posix()
-    Path(pdf_path).write_bytes(content)
-    saved_size = Path(pdf_path).stat().st_size
-    if saved_size != len(content):
-        remove_pdf_if_unused(pdf_path)
-        log.error("saved %s is %d bytes, upload was %d", pdf_path, saved_size, len(content))
-        raise HTTPException(500, "The PDF couldn't be saved. Please try again.")
+    # Locally, keep the PDF (named by its hash) so we can make more questions from it later.
+    pdf_path = None
+    if saves_pdfs():
+        UPLOAD_DIR.mkdir(exist_ok=True)
+        pdf_path = (UPLOAD_DIR / f"{pdf_hash}.pdf").as_posix()
+        Path(pdf_path).write_bytes(content)
+        saved_size = Path(pdf_path).stat().st_size
+        if saved_size != len(content):
+            remove_pdf_if_unused(pdf_path)
+            log.error("saved %s is %d bytes, upload was %d", pdf_path, saved_size, len(content))
+            raise HTTPException(500, "The PDF couldn't be saved. Please try again.")
     info = read_pdf(content)  # once; later calls use info["text"] instead of the PDF
     text = info["text"]
     try:
-        data = generate(make_client(), pdf_path, content, text_for_first_generate(info))
+        # The bytes are sent from memory; the name is only Gemini's display name.
+        data = generate(make_client(), pdf_path or Path(file.filename).name, content,
+                        text_for_first_generate(info))
     except Exception as e:
         remove_pdf_if_unused(pdf_path)
         if isinstance(e, GenerationError):
