@@ -567,3 +567,24 @@ and the smaller text for generate more. Cached repeats of generate, explain and 
 - Colour is used only for progress bars and right/wrong answers (muted red, amber, green). Everything else is black lines on off-white, sharp corners, no shadows.
 - Fonts: Archivo expanded for headings, Instrument Sans for text, IBM Plex Mono for numbers.
 - `GET /today` feeds the home "Today" box; the last score is the accuracy on the most recent day with quiz answers.
+
+# Deployment
+
+## 51. One db layer for SQLite and Postgres
+- `DATABASE_URL` set = Postgres (psycopg with a small connection pool), otherwise the `notes.db` SQLite file.
+- All SQL uses `?` and portable syntax (`LOWER(a) = LOWER(b)`, `ON CONFLICT`); `Conn` in `db.py` swaps `?` for `%s` and gets new ids with `RETURNING id`.
+- Only the schema differs (`BIGSERIAL`, case-insensitive unique indexes). Date grouping moved to Python so it works on both.
+- Tests always use SQLite; `tests/test_postgres.py` runs only when `DATABASE_URL` is set.
+
+## 52. Guests and per-user data
+- First visit: an httpOnly `lapse_uid` cookie with a random uuid. That id is the `user_id`.
+- Shared: subjects, notes, MCQs, cards, explanations. Per user: `attempts.user_id`, `card_state` (each user's SM-2 schedule; a card without a row is new, due today) and `ai_quota`.
+- The admin (passcode) is user `owner`, which also owns all progress from before guests existed. A login later just maps an account to a `user_id`.
+
+## 53. Admin passcode and AI limits
+- `ADMIN_PASSCODE` guards upload, generate more, delete, new/rename subject and Regenerate (`X-Admin-Passcode` header). Without it: local = admin, production = nobody.
+- `study_ai.before_call` runs right before a real Gemini request, never for a cached one. `app.spend_ai_call` counts one per action and refuses after 10 per guest or 200 in total per UTC day (429).
+
+## 54. No disk writes in production
+- With Postgres, `/generate` keeps the PDF in memory: Gemini gets the bytes, the database gets the text. Nothing goes to `uploads/`.
+- `api/index.py` refuses to start without `DATABASE_URL` instead of creating a SQLite file on Vercel's read-only disk.
