@@ -505,9 +505,33 @@ async function renderSubjectQuiz(body, s, topic) {
     runQuiz(body, questions, { title: topic ? `Practice: ${topic}` : "Mixed quiz", backHref: `#/s/${s.id}` });
   }
   if (topic) return start();
-  body.append(el("div", { class: "start-box" },
-    el("p", {}, `${QUIZ_SIZE} questions mixed from all PDFs in ${s.name}. Weak topics come up more often.`),
-    el("button", { onclick: start }, "Start quiz")));
+  body.append(el("div", { class: "split" },
+    el("div", { class: "start-box" },
+      label("Quiz"),
+      el("h2", { class: "h2" }, "Mixed quiz"),
+      el("p", { class: "lede" }, `${QUIZ_SIZE} questions from every PDF in ${s.name}. Topics you miss come up more often.`),
+      btn("primary", "Start quiz", { onclick: start })),
+    keysCard([["1-4", "pick an answer"], ["Enter", "next question"]])));
+}
+
+// Small bordered table of keyboard shortcuts.
+function keysCard(rows) {
+  return el("aside", { class: "card keys" },
+    label("Keyboard"),
+    el("dl", {}, rows.map(([k, text]) => el("div", {}, el("dt", { class: "num" }, k), el("dd", {}, text)))));
+}
+
+// Session header: title, "03 / 10" and a thin progress line.
+function sessionHead(title, done, total, countText) {
+  return el("div", { class: "session-head" },
+    el("div", { class: "session-head-row" },
+      el("span", { class: "label" }, title),
+      el("span", { class: "num session-count" }, countText)),
+    el("div", { class: "session-progress" }, el("div", { style: `width: ${total ? (100 * done) / total : 0}%` })));
+}
+
+function pad2(n) {
+  return String(n).padStart(2, "0");
 }
 
 // ---------- Quiz session (used by the subject quiz and the PDF quiz) ----------
@@ -527,22 +551,31 @@ function runQuiz(container, questions, opts) {
     const q = questions[index];
     let answered = false;
 
-    const explanation = el("p", { class: "explanation", hidden: true });
-    const next = el("button", { class: "next", hidden: true, onclick: () => { index++; show(); } },
-      index === questions.length - 1 ? "See results" : "Next");
+    const explanation = el("div", { class: "explanation" });
+    const next = btn("primary", index === questions.length - 1 ? "See results" : "Next question",
+      { onclick: () => { index++; show(); } });
+    const footer = el("div", { class: "session-foot", hidden: true }, explanation, next);
+    const mark = (ok) => el("span", { class: `mark ${ok ? "ok" : "no"}` }, icon(ok ? "check" : "x"));
     const options = q.options.map((text, j) =>
-      el("button", { class: "option", onclick: () => choose(j) }, `${LETTERS[j]}) ${text}`));
+      el("button", { type: "button", class: "option", onclick: () => choose(j) },
+        el("span", { class: "option-key num" }, LETTERS[j]),
+        el("span", { class: "option-text" }, text)));
 
     function choose(j) {
       if (answered) return;
       answered = true;
       const correct = j === q.answer;
       options.forEach((b) => (b.disabled = true));
-      options[q.answer].classList.add("correct");
-      if (!correct) options[j].classList.add("wrong");
-      explanation.textContent = q.explanation || "";
-      explanation.hidden = !q.explanation;
-      next.hidden = false;
+      options[j].classList.add("selected");
+      options[j].append(mark(correct));
+      if (!correct) {
+        options[q.answer].classList.add("correct");
+        options[q.answer].append(mark(true));
+      }
+      explanation.className = `explanation ${correct ? "ok" : "no"}`;
+      explanation.replaceChildren(label(correct ? "Correct" : "Not quite"),
+        q.explanation ? el("p", {}, q.explanation) : null);
+      footer.hidden = false;
       results.push({ q, chosen: j, correct });
       if (!opts.practice) saveAttempt(q, j);
     }
@@ -557,14 +590,13 @@ function runQuiz(container, questions, opts) {
       }
     };
 
+    const title = opts.title || "Quiz";
     container.replaceChildren(el("div", { class: "session" },
-      el("div", { class: "session-head" },
-        el("span", {}, opts.title || "Quiz", q.practice ? el("span", { class: "tag" }, "AI practice") : null),
-        el("span", { class: "left-count" }, `${index + 1} / ${questions.length}`)),
+      sessionHead(q.practice ? `${title} · new question` : title,
+        index, questions.length, `${pad2(index + 1)} / ${pad2(questions.length)}`),
       el("p", { class: "question-text" }, q.question),
       el("div", { class: "options" }, options),
-      explanation,
-      next));
+      footer));
   }
   show();
 }
@@ -582,30 +614,31 @@ function finishQuiz(container, results, opts) {
   const wrong = results.filter((r) => !r.correct);
   showReport(container, {
     good: results.length - wrong.length,
-    goodLabel: "correct",
+    goodLabel: "Correct",
     bad: wrong.length,
-    badLabel: "wrong",
+    badLabel: "Wrong",
     mistakesTitle: "Wrong answers",
     mistakes: wrong.map((r) => el("li", {},
       el("p", { class: "m-question" }, r.q.question),
-      el("p", { class: "m-answer" }, "Correct: ", el("b", {}, r.q.options[r.q.answer])),
-      el("p", { class: "m-yours" }, `You chose: ${r.q.options[r.chosen]} `, whyButton(r.q, r.chosen)),
-      r.q.explanation ? el("p", { class: "m-note" }, r.q.explanation) : null)),
+      el("p", { class: "m-answer" }, el("span", { class: "mark ok" }, icon("check")), r.q.options[r.q.answer]),
+      el("p", { class: "m-yours" }, el("span", { class: "mark no" }, icon("x")), r.q.options[r.chosen]),
+      r.q.explanation ? el("p", { class: "m-note" }, r.q.explanation) : null,
+      whyButton(r.q, r.chosen))),
     topics: wrong.map((r) => r.q.subtopic),
     onPractice: () => runQuiz(container, wrong.map((r) => r.q), { ...opts, practice: true, title: "Practice mistakes" }),
     backHref: opts.backHref,
   });
 }
 
-// "Why?" next to a wrong answer: Gemini explains the mistake (saved, so asking again is instant).
+// "Why?" under a wrong answer: Gemini explains the mistake (saved, so asking again is instant).
 function whyButton(q, chosen) {
-  const text = el("span", { class: "m-why", hidden: true });
-  const button = el("button", { class: "secondary small" }, "Why?");
+  const text = el("p", { class: "m-why", hidden: true });
+  const button = btn("secondary", "Why was mine wrong?", { small: true });
   button.addEventListener("click", async () => {
     button.disabled = true;
     text.hidden = false;
     text.className = "m-why";
-    text.textContent = "Thinking...";
+    text.textContent = "Working it out...";
     try {
       const r = await postJson("/why", { note_id: q.note_id, question_index: q.question_index, chosen });
       text.textContent = r.why;
@@ -617,7 +650,7 @@ function whyButton(q, chosen) {
       button.disabled = false;
     }
   });
-  return [button, text];
+  return el("div", { class: "m-why-box" }, button, text);
 }
 
 // ---------- End-of-session report (quiz and Daily Revision) ----------
@@ -637,21 +670,29 @@ function showReport(container, r) {
   const pct = total ? Math.round((100 * r.good) / total) : 0;
   const topics = unique(r.topics);
 
-  container.replaceChildren(el("div", { class: "session report" },
-    el("h3", {}, "Session complete"),
-    el("div", { class: "stat-row" },
+  container.replaceChildren(el("div", { class: "report" },
+    el("div", { class: "report-head" },
+      el("div", {}, label("Session report"), el("h2", { class: "h2" }, "Session complete")),
+      pixels("..gkl.k.gk..")),
+    el("div", { class: "grid-lined stats-3" },
       stat(r.good, r.goodLabel, "good"),
       stat(r.bad, r.badLabel, r.bad ? "bad" : ""),
-      stat(`${pct}%`, "accuracy")),
-    r.bad
-      ? [el("h4", {}, r.mistakesTitle), el("ul", { class: "mistakes" }, r.mistakes)]
-      : el("p", { class: "done" }, "No mistakes. Well done!"),
-    topics.length
-      ? [el("h4", {}, "Topics to revise"), el("div", { class: "chips" }, topics.map((t) => el("span", { class: "chip" }, t)))]
-      : null,
-    el("div", { class: "report-actions" },
-      r.bad ? el("button", { onclick: r.onPractice }, "Practice mistakes again") : null,
-      el("a", { class: "button secondary", href: r.backHref }, "Back to subject"))));
+      stat(`${pct}%`, "Score")),
+    bar(pct),
+    el("div", { class: "split report-body" },
+      el("div", {},
+        label(r.mistakesTitle),
+        r.bad
+          ? el("ul", { class: "mistakes list-lined" }, r.mistakes)
+          : el("p", { class: "lede" }, "No mistakes this round.")),
+      el("aside", {},
+        topics.length
+          ? [label("Topics to revise"), el("div", { class: "tags" },
+              topics.map((t) => el("a", { class: "tag", href: `${r.backHref}/explain/${encodeURIComponent(t)}` }, t)))]
+          : null,
+        el("div", { class: "btn-col" },
+          r.bad ? btn("primary", "Practice mistakes again", { onclick: r.onPractice }) : null,
+          btn("secondary", "Back to subject", { href: r.backHref }, "back"))))));
 }
 
 // ---------- Subject: Daily Revision tab ----------
