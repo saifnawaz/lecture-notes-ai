@@ -6,3 +6,4 @@ output/
 *.db
 .pytest_cache/
 uploads/
+design/
