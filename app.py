@@ -3,11 +3,14 @@
 Run with:  uvicorn app:app --reload
 """
 import hashlib
+import hmac
 import logging
+import os
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -38,6 +41,56 @@ async def lifespan(app):
 
 
 app = FastAPI(title="Lapse", lifespan=lifespan)
+
+
+# ---------- Who is asking: a guest (cookie) or the admin ----------
+
+COOKIE = "lapse_uid"
+COOKIE_DAYS = 365
+
+
+def valid_uuid(value):
+    try:
+        return str(uuid.UUID(value)) == value
+    except (TypeError, ValueError):
+        return False
+
+
+@app.middleware("http")
+async def guest_cookie(request: Request, call_next):
+    """First visit: give the browser a random guest id in an httpOnly cookie.
+
+    All per-user data (quiz answers, card schedules, AI limits) is stored under this id,
+    so a real login later can map an account to a user_id and reuse everything.
+    """
+    guest_id = request.cookies.get(COOKIE)
+    is_new = not valid_uuid(guest_id)
+    if is_new:
+        guest_id = str(uuid.uuid4())
+    request.state.guest_id = guest_id
+    response = await call_next(request)
+    if is_new:
+        https = request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
+        response.set_cookie(COOKIE, guest_id, max_age=COOKIE_DAYS * 86400,
+                            httponly=True, samesite="lax", secure=https)
+    return response
+
+
+def is_admin(request: Request):
+    """The admin sends ADMIN_PASSCODE in the X-Admin-Passcode header.
+
+    Without ADMIN_PASSCODE: locally (SQLite) you are the admin; in production nobody is.
+    """
+    passcode = os.getenv("ADMIN_PASSCODE")
+    if not passcode:
+        return not db.is_postgres()
+    given = request.headers.get("x-admin-passcode", "")
+    return hmac.compare_digest(given.encode(), passcode.encode())
+
+
+def current_user(request: Request):
+    """user_id for per-user data: the admin's own progress is OWNER, everyone else is their guest id."""
+    return db.OWNER if is_admin(request) else request.state.guest_id
 
 
 def remove_pdf_if_unused(pdf_path):
@@ -120,23 +173,23 @@ def source_text(note):
 # ---------- Subjects ----------
 
 @app.get("/subjects")
-def list_subjects():
-    """Subject cards for the home page: name, PDFs, cards due today, accuracy."""
-    return db.subject_summaries()
+def list_subjects(uid: str = Depends(current_user)):
+    """Subject cards for the home page: name, PDFs, this user's cards due today and accuracy."""
+    return db.subject_summaries(user_id=uid)
 
 
 @app.get("/today")
-def today_summary():
+def today_summary(uid: str = Depends(current_user)):
     """Home page "Today" box: cards due, weakest topic overall, score on the last quiz day."""
-    subjects = db.subject_summaries()
+    subjects = db.subject_summaries(user_id=uid)
     ids = {s["name"].lower(): s["id"] for s in subjects}
-    weakest = next(iter(db.progress()), None)
+    weakest = next(iter(db.progress(user_id=uid)), None)
     if weakest:
         weakest["subject_id"] = ids.get((weakest["subject"] or "").lower())
     return {
         "due": sum(s["due_today"] for s in subjects),
         "weakest": weakest,
-        "last_score": db.last_score(),
+        "last_score": db.last_score(uid),
     }
 
 
@@ -153,17 +206,18 @@ def create_subject(body: NewSubject):
 
 
 @app.get("/subjects/{subject_id}")
-def get_subject(subject_id: int):
-    """Subject overview: the summary plus the 3 weakest topics."""
-    subject = db.get_subject(subject_id)
+def get_subject(subject_id: int, uid: str = Depends(current_user)):
+    """Subject overview: the summary plus this user's 3 weakest topics."""
+    subject = db.get_subject(subject_id, uid)
     if subject is None:
         raise HTTPException(404, "Subject not found.")
-    subject["weakest"] = db.progress(subject["name"])[:3]
+    subject["weakest"] = db.progress(subject["name"], user_id=uid)[:3]
     return subject
 
 
 @app.get("/subjects/{subject_id}/quiz")
-def subject_quiz(subject_id: int, n: int = Query(10, ge=1, le=50), subtopic: str | None = None):
+def subject_quiz(subject_id: int, n: int = Query(10, ge=1, le=50), subtopic: str | None = None,
+                 uid: str = Depends(current_user)):
     """Mixed MCQs from all PDFs in a subject; weak topics come up more often.
 
     With ?subtopic=..., only that topic (used by the "Practice" buttons).
@@ -176,7 +230,7 @@ def subject_quiz(subject_id: int, n: int = Query(10, ge=1, le=50), subtopic: str
         questions = [q for q in questions if q["subtopic"].casefold() == subtopic.casefold()]
     mastery = {
         r["subtopic"].casefold(): db.mastery_score(r["correct"], r["attempts"])
-        for r in db.progress(subject["name"])
+        for r in db.progress(subject["name"], user_id=uid)
     }
     return pick_questions(questions, mastery, n)
 
@@ -226,19 +280,19 @@ def explain(subject_id: int, subtopic: str, regenerate: bool = False):
     return {"subtopic": subtopic, **db.get_explanation(subject["name"], subtopic), "cached": False}
 
 
-def topic_masteries(subject_name, questions):
+def topic_masteries(subject_name, questions, uid):
     """[(subtopic, smoothed mastery)] for every topic that has questions or attempts.
 
     Topics never answered count as 0.5, like in the quiz picker.
     """
     topics = {q["subtopic"].casefold(): (q["subtopic"], 0.5) for q in questions}
-    for r in db.progress(subject_name):
+    for r in db.progress(subject_name, user_id=uid):
         topics[r["subtopic"].casefold()] = (r["subtopic"], db.mastery_score(r["correct"], r["attempts"]))
     return list(topics.values())
 
 
 @app.post("/subjects/{subject_id}/practice")
-def practice(subject_id: int, n: int = Query(8, ge=5, le=10)):
+def practice(subject_id: int, n: int = Query(8, ge=5, le=10), uid: str = Depends(current_user)):
     """Make n NEW MCQs for the weakest topics and return them as a quiz.
 
     They are saved as normal questions (marked "practice": true) on the note that
@@ -246,7 +300,7 @@ def practice(subject_id: int, n: int = Query(8, ge=5, le=10)):
     """
     subject = subject_or_404(subject_id)
     questions = db.subject_questions(subject["name"])
-    plan = plan_practice(topic_masteries(subject["name"], questions), n)
+    plan = plan_practice(topic_masteries(subject["name"], questions, uid), n)
     if not plan:
         raise HTTPException(400, "This subject has no questions yet. Upload a PDF first.")
     wanted = {topic.casefold() for topic, _ in plan}
@@ -313,11 +367,11 @@ def list_notes(subject: str | None = None):
 
 
 @app.get("/notes/{note_id}")
-def get_note(note_id: int):
+def get_note(note_id: int, uid: str = Depends(current_user)):
     note = db.get_note(note_id)
     if note is None:
         raise HTTPException(404, "Note not found.")
-    note["accuracy"] = db.note_accuracy(note_id)  # None if quiz never tried
+    note["accuracy"] = db.note_accuracy(note_id, uid)  # None if this user never tried the quiz
     note["card_count"] = db.count_cards(note_id)
     return public_note(note)
 
@@ -382,11 +436,11 @@ def make_mcqs(note_id: int):
 
 
 @app.get("/notes/{note_id}/cards")
-def list_note_cards(note_id: int):
-    """All flashcards of one note (for the PDF page's Flashcards tab)."""
+def list_note_cards(note_id: int, uid: str = Depends(current_user)):
+    """All flashcards of one note with this user's schedule (for the PDF page's Flashcards tab)."""
     if db.get_note(note_id) is None:
         raise HTTPException(404, "Note not found.")
-    return db.note_cards(note_id)
+    return db.note_cards(note_id, uid)
 
 
 class Attempt(BaseModel):
@@ -397,7 +451,7 @@ class Attempt(BaseModel):
 
 
 @app.post("/attempts")
-def record_attempt(attempt: Attempt):
+def record_attempt(attempt: Attempt, uid: str = Depends(current_user)):
     note = db.get_note(attempt.note_id)
     if note is None:
         raise HTTPException(404, "Note not found.")
@@ -413,21 +467,21 @@ def record_attempt(attempt: Attempt):
     subtopic = question.get("subtopic") or note["topic"]
     attempt_id = db.save_attempt(
         attempt.note_id, attempt.question_index, subtopic,
-        note["subject"], attempt.chosen, correct,
+        note["subject"], attempt.chosen, correct, user_id=uid,
     )
     return {"id": attempt_id, "correct": correct, "subtopic": subtopic, "subject": note["subject"]}
 
 
 @app.get("/progress")
-def get_progress(subject: str | None = None):
-    return db.progress(subject)
+def get_progress(subject: str | None = None, uid: str = Depends(current_user)):
+    return db.progress(subject, user_id=uid)
 
 
 # ---------- Flashcards ----------
 
 @app.get("/cards/due")
-def get_due_cards(subject: str | None = None):
-    return db.due_cards(subject)
+def get_due_cards(subject: str | None = None, uid: str = Depends(current_user)):
+    return db.due_cards(subject, user_id=uid)
 
 
 class Review(BaseModel):
@@ -436,16 +490,17 @@ class Review(BaseModel):
 
 
 @app.post("/cards/{card_id}/review")
-def review_card(card_id: int, review: Review):
-    card = db.get_card(card_id)
+def review_card(card_id: int, review: Review, uid: str = Depends(current_user)):
+    """Schedule one card for this user only (SM-2)."""
+    card = db.get_card(card_id, uid)
     if card is None:
         raise HTTPException(404, "Card not found.")
     result = srs.sm2(review.quality, card["ease"], card["interval_days"], card["repetitions"])
     db.update_card(
         card_id, result["ease"], result["interval_days"], result["repetitions"],
-        result["due_date"].isoformat(),
+        result["due_date"].isoformat(), user_id=uid,
     )
-    return db.get_card(card_id)
+    return db.get_card(card_id, uid)
 
 
 # Serve the frontend (static/index.html at "/"). Must come after the API routes.
