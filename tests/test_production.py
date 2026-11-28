@@ -40,3 +40,16 @@ def test_pdf_over_4_mb_is_refused(client, monkeypatch):
     assert r.status_code == 413
     assert r.json()["detail"] == "This PDF is 4.1 MB. The limit is 4 MB."
     assert called == []
+
+
+def test_health_reports_database(client):
+    assert client.get("/health").json() == {"ok": True, "db": "sqlite"}
+
+
+def test_health_when_database_is_down(client, monkeypatch):
+    def broken():
+        raise RuntimeError("no database")
+    monkeypatch.setattr(app_module.db, "connect", broken)
+    r = client.get("/health")
+    assert r.status_code == 503
+    assert r.json() == {"ok": False, "db": "sqlite"}

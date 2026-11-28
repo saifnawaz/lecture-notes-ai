@@ -77,7 +77,27 @@ async def lifespan(app):
     yield
 
 
-app = FastAPI(title="Lapse", lifespan=lifespan)
+app = FastAPI(title="Lapse", lifespan=lifespan)  # Vercel's FastAPI preset serves this "app"
+
+# On Vercel (which sets VERCEL=1) the disk is read-only, so Postgres is required. Tables are
+# created here, once per cold start, in case the platform doesn't run the lifespan startup.
+if os.getenv("VERCEL"):
+    if not db.is_postgres():
+        raise RuntimeError("DATABASE_URL is not set. On Vercel the disk is read-only, so Postgres is required.")
+    db.init_db()
+
+
+@app.get("/health")
+def health():
+    """Deploy check: which database is in use, and whether it answers."""
+    kind = "postgres" if db.is_postgres() else "sqlite"
+    try:
+        with db.connect() as conn:
+            conn.execute("SELECT 1")
+    except Exception:
+        log.exception("health check: database unreachable")
+        return JSONResponse(status_code=503, content={"ok": False, "db": kind})
+    return {"ok": True, "db": kind}
 
 
 # ---------- Who is asking: a guest (cookie) or the admin ----------
