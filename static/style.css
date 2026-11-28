@@ -317,3 +317,20 @@ a.subject-card:hover { background: var(--grey-1); }
   .topic-row .bar-track { grid-column: 1 / -1; grid-row: 2; }
   .topic-row .btn-row { grid-column: 1 / -1; }
 }
+
+/* ================= PDFs tab ================= */
+.pdf-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: var(--s4); align-items: center;
+  padding: var(--s4) var(--s5); transition: background-color var(--ease); }
+.pdf-row:hover { background: var(--grey-1); }
+.pdf-row-main b { display: block; font-weight: 500; }
+.pdf-row-main small { font-size: 0.8rem; }
+.pdf-row-counts { font-size: 0.8rem; color: var(--grey-3); white-space: nowrap; }
+.upload-box .h3 { margin-bottom: var(--s2); }
+.upload-form { display: flex; flex-direction: column; gap: var(--s3); margin-top: var(--s5); }
+.upload-form input[type="file"] { width: 100%; }
+.upload-form .btn { justify-content: space-between; }
+
+@media (max-width: 760px) {
+  .pdf-row { grid-template-columns: auto minmax(0, 1fr) auto; padding: var(--s4); }
+  .pdf-row-counts { grid-column: 2; grid-row: 2; }
+}

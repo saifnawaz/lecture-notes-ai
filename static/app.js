@@ -429,22 +429,28 @@ async function renderExplain(body, s, topic) {
 
 async function renderPdfs(body, s) {
   const notes = await api(`/notes?subject=${encodeURIComponent(s.name)}`);
-  body.append(
-    uploadForm(s),
-    notes.length
-      ? el("div", { class: "pdf-list" }, notes.map((n) => el("a", { class: "pdf-row", href: `#/s/${s.id}/pdf/${n.id}` },
-          el("div", {},
-            el("b", {}, n.topic || "Untitled"),
-            el("small", {}, [n.filename, new Date(n.created_at).toLocaleDateString()].filter(Boolean).join(" · "))),
-          el("small", { class: "muted" }, `${plural(n.mcq_count, "MCQ")} · ${plural(n.card_count, "card")}`))))
-      : el("p", { class: "muted" }, "No PDFs yet. Upload one to get notes, a quiz and flashcards."),
-  );
+  body.append(el("div", { class: "split" },
+    el("div", {},
+      el("div", { class: "section-head" },
+        el("h2", { class: "h2" }, "Lecture PDFs"),
+        el("span", { class: "muted num" }, plural(notes.length, "PDF"))),
+      notes.length
+        ? el("div", { class: "list-lined" }, notes.map((n) => el("a", { class: "pdf-row", href: `#/s/${s.id}/pdf/${n.id}` },
+            icon("file"),
+            el("div", { class: "pdf-row-main" },
+              el("b", {}, n.topic || "Untitled"),
+              el("small", { class: "muted" },
+                [n.filename, new Date(n.created_at).toLocaleDateString()].filter(Boolean).join(" · "))),
+            el("span", { class: "num pdf-row-counts" }, `${plural(n.mcq_count, "MCQ")} · ${plural(n.card_count, "card")}`),
+            icon("chevron"))))
+        : el("p", { class: "muted" }, "No PDFs yet. Upload one to get notes, a quiz and flashcards.")),
+    uploadForm(s)));
 }
 
 // Upload a PDF into this subject. If the same file is already here, ask first.
 function uploadForm(s) {
   const file = el("input", { type: "file", accept: ".pdf,application/pdf", required: true });
-  const button = el("button", { type: "submit" }, "Upload PDF");
+  const button = btn("primary", "Upload and generate", { type: "submit" });
   const status = el("p", { class: "status" });
 
   async function send(force) {
@@ -461,12 +467,12 @@ function uploadForm(s) {
     return readJson(res);
   }
 
-  const form = el("form", { class: "upload-row" }, file, button);
+  const form = el("form", { class: "upload-form" }, file, button);
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     button.disabled = true;
     status.className = "status";
-    status.textContent = "Generating... this can take a minute.";
+    status.textContent = "Reading the PDF and writing notes. This can take a minute.";
     try {
       const note = await send(false);
       if (note) location.hash = `#/s/${s.id}/pdf/${note.id}`;
@@ -479,7 +485,11 @@ function uploadForm(s) {
       button.disabled = false;
     }
   });
-  return el("div", { class: "upload-box" }, form, status);
+  return el("aside", { class: "card upload-box" },
+    label("Upload"),
+    el("h3", { class: "h3" }, "Add a lecture"),
+    el("p", { class: "muted" }, "One PDF at a time. You get notes, MCQs and flashcards for it."),
+    form, status);
 }
 
 // ---------- Subject: Quiz tab ----------
